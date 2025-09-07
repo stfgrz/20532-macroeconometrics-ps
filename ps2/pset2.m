@@ -20,8 +20,9 @@ den  = sum(Ylag .^ 2,    1);
 phihat = (num ./ den).';
 
 figure; histogram(phihat, 50);
-title('Empirical Distribution of OLS Estimator \phi (RW, no intercept)');
-xlabel('\phi'); ylabel('Frequency');
+xline(1, 'r--', 'LineWidth', 2);  % True value
+xline(mean(phihat), 'g--', 'LineWidth', 2);  % Sample mean
+legend('Distribution', 'True φ=1', 'Sample Mean');
 
 %% EXERCISE 1 - B)
 % DF regression with intercept: Δy_t = α + ρ y_{t-1} + u_t
