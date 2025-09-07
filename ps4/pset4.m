@@ -166,7 +166,7 @@ for i = 1:num_samples
     IRFs_VECM(i, :, :, :) = irf_state_ecm(1:num_vars, :, :);
 end
 
-%% Task (a): Levels – plot mean and 95% pointwise bands
+%% Task (a): Levels - plot mean and 95% pointwise bands
 mean_irfs_levels = squeeze(mean(irfs_levels, 1));
 percentiles_irfs_levels = prctile(irfs_levels, [2.5, 97.5], 1);
 
@@ -182,7 +182,7 @@ for iV = 1:num_vars
     end
 end
 
-%% Task (b): Differences – plot mean and 95% bands (cumulative)
+%% Task (b): Differences - plot mean and 95% bands (cumulative)
 mean_irfs_differences = squeeze(mean(irfs_differences, 1));
 percentiles_irfs_differences = prctile(irfs_differences, [2.5, 97.5], 1);
 
@@ -198,7 +198,7 @@ for iV = 1:num_vars
     end
 end
 
-%% Task (c): IRFs for varying lags – with bands (per lag)
+%% Task (c): IRFs for varying lags - with bands (per lag)
 for lag = 1:max_lags
     if isempty(irfs_lags{lag}), warning('IRFs for Lag %d are not available.', lag); continue; end
     mean_irfs_lags = squeeze(mean(irfs_lags{lag}, 1));
@@ -239,7 +239,7 @@ end
 legend(arrayfun(@(lag) sprintf('Lag %d', lag), 1:max_lags, 'UniformOutput', false), ...
        'NumColumns', max_lags, 'Location', 'southoutside');
 
-%% Task (d): ECM – mean and 95% bands
+%% Task (d): ECM - mean and 95% bands
 mean_IRFs   = mean(IRFs_VECM, 1);                % 1 x n x H x n
 lower_CI    = prctile(IRFs_VECM, 2.5, 1);
 upper_CI    = prctile(IRFs_VECM, 97.5, 1);

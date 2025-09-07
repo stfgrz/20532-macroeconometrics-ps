@@ -16,8 +16,8 @@ y = filter(1, [1 -phi], e);        % filter
 fprintf('Ex1: max |x - y| = %.3g\n', max(abs(x-y)));
 
 tiledlayout(1,2,'TileSpacing','compact');
-nexttile; plot(x); title('AR(1) – loop'); grid on;
-nexttile; plot(y); title('AR(1) – filter'); grid on;
+nexttile; plot(x); title('AR(1) - loop'); grid on;
+nexttile; plot(y); title('AR(1) - filter'); grid on;
 
 %% EXERCISE 1C: ACFs
 tiledlayout(1,2,'TileSpacing','compact'); 
@@ -49,8 +49,8 @@ t = tiledlayout(2,2,'TileSpacing','compact');
 ax1 = nexttile; autocorr(x,"NumLags",20); title('ACF loop');
 ax2 = nexttile; autocorr(y,"NumLags",20); title('ACF filter');
 linkaxes([ax1 ax2],'y');
-nexttile; plot(x); title('MA(1) – loop'); grid on;
-nexttile; plot(y); title('MA(1) – filter'); grid on;
+nexttile; plot(x); title('MA(1) - loop'); grid on;
+nexttile; plot(y); title('MA(1) - filter'); grid on;
 
 %% EXERCISE 4: MA(2) ACF and AR(2) PACF (no external arma_generator)
 T = 500; sigma2 = 0.4; e = sqrt(sigma2)*randn(T,1);
