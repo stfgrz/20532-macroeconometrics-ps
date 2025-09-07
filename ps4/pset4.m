@@ -298,7 +298,7 @@ function [redAR, sigma, sidui, R2, constant, Yhat, ex] = varestimy(nlags, X, k, 
     for i = 1:variab
         R2(i) = 1 - (sum(sidui(:, i).^2) / sum(center(Y(:, i)).^2));
     end
-    sigma = (1 / obs) * sidui' * sidui;
+    sigma = (1 / obs) * (sidui' * sidui);
 end
 
 function XC = center(X)
@@ -322,7 +322,7 @@ function [lambda, traceStats, maxStats] = johansenStats(dy, y, dLags)
     % Build sample to align regressors:
     % We need R0t: residuals of Δy_t on Δy_{t-1..t-dLags}
     %        R1t: residuals of  y_{t-1} on Δy_{t-1..t-dLags}
-    T1 = size(y,1);
+    T1 = size(y,1); %#ok<NASGU>
     n  = size(y,2);
     Dy = dy;                 % (T1-1) x n
     Y1 = y(1:end-1,:);       % (T1-1) x n
@@ -348,7 +348,7 @@ function [lambda, traceStats, maxStats] = johansenStats(dy, y, dLags)
     S10 = S01';
 
     % Solve generalized eigenproblem: |λ S11 - S10 S00^{-1} S01|=0
-    [G, D] = eig(S10 / S00 * S01, S11);
+    [G, D] = eig(S10 / S00 * S01, S11); %#ok<ASGLU>
     lambda = sort(real(diag(D)), 'descend');
 
     % Trace and max statistics for r=0..n-1 -> length n

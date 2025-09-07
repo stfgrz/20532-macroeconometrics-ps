@@ -3,7 +3,7 @@ clear; clc; close all;
 rng(42); % reproducibility
 
 %% EXERCISE 1 - A)
-phi = 1;
+phi = 1; %#ok<NASGU>
 T = 250;
 n_sim = 10000;
 sigma_eps = 1;

@@ -302,7 +302,7 @@ end
 function Ysim = simulateVAR(Y, p, cvec, Astack, eps)
     % Simulate VAR(p): Y_t = c + A1 Y_{t-1} + ... + Ap Y_{t-p} + eps_t
     % Preserves first p observations from Y as initial conditions
-    [T0, N] = size(Y);
+    [T0, N] = size(Y); %#ok<ASGLU>
     T = size(eps,1);
     Ysim = zeros(T + p, N);
     Ysim(1:p, :) = Y(1:p, :);
