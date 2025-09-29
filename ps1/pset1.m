@@ -26,12 +26,12 @@ exportFig = @(fh, name) exportgraphics(fh, fullfile(outdir, name), 'ContentType'
 % Simulate AR(1) by loop and by filter, and compare
 % Y_t = mu + phi*(Y_{t-1} - mu) + eps_t,  eps_t ~ N(0, sigma2)
 
-rng(12345,'twister');              % Reproducibility for Ex.1
+rng(20532,'twister');       % Reproducibility for Ex.1
 T      = 500;
 phi1   = 0.4;
 sigma2_1 = 0.2;
-mu1    = 0;        % E[Y_t] = 0
-Y0     = 0;        % matching starting condition for both methods
+mu1    = 0;                 % E[Y_t] = 0
+Y0     = 0;                 % matching starting condition for both methods
 
 % Use the SAME innovation sequence for both methods
 eps1 = sqrt(sigma2_1) * randn(T,1);
@@ -124,28 +124,31 @@ for r = 1:R
     TT   = T + B;
     eps3 = sqrt(sigma2_3) * randn(TT,1);
 
-    % Start at the mean (mu3) to reduce transient; combine with burn-in
+    % Start at the mean (mu3) + burn-in
     Ytmp = simulate_ar1_loop(TT, phi3, sigma2_3, mu3, mu3, eps3);
-    Y    = Ytmp(B+1:end);
+    Y    = Ytmp(B+1:end);                 % keep last T observations
 
-    % OLS estimate of phi in Y_t = phi * Y_{t-1} + u_t (demean not required if mean=0)
+    % OLS in Y_t = phi * Y_{t-1} + u_t  (no intercept; mean is zero)
     ylag = Y(1:end-1);
     yt   = Y(2:end);
-    X    = ylag;      % no constant, as mean is zero in DGP
+    X    = ylag;                           % (T-1) x 1
     bhat = (X' * X) \ (X' * yt);
     uhat = yt - X * bhat;
-    s2   = (uhat' * uhat) / (T - 1);            % sigma_u^2 (df = T-1)
-    se   = sqrt( s2 / (X' * X) );
+
+    % --- Correct degrees of freedom: nu = (T-1) - 1 = T - 2 ---
+    nu   = (T - 1) - 1;
+    s2   = (uhat' * uhat) / nu;            % unbiased sigma_u^2
+    se   = sqrt( s2 / (X' * X) );          % std error of bhat
 
     phi_hat(r) = bhat;
-    tstat(r)   = (bhat - 0) / se;               % test H0: phi = 0
+    tstat(r)   = bhat / se;                % test H0: phi = 0
 end
 
 % Rejection frequency at 5%
 if exist('tinv','file')
-    tcrit = tinv(0.975, T-1);
+    tcrit = tinv(0.975, nu);
 else
-    tcrit = 1.96; % approximation for moderate T
+    tcrit = 1.96;                          % normal approx
 end
 reject = mean(abs(tstat) > tcrit);
 
@@ -167,17 +170,16 @@ xlabel('$\hat{\phi}$'); ylabel('Density')
 title(['Exercise 3: Empirical Distribution of OLS ', '$\hat{\phi}$', ' (R=', num2str(R), ', T=', num2str(T), ')'], 'Interpreter','latex')
 exportFig(fh5,'ex3_phi_hat_hist.png');
 
-
 %% ===================== Exercise 4 =====================
-% Empirical distribution of OLS AR(1) with phi=0.9 over varying T
+% Empirical distribution of OLS AR(1) with phi = 0.9 over varying T
 
-rng(45678,'twister');              % Reproducibility for Ex.4
-phi  = 0.9;
-sigma2_4 = 1.0;        % explicit
-mu   = 0;
-Ts   = [50, 100, 200, 1000];
-R    = 1000;
-B    = 500;            % burn-in to reduce dependence on starting value
+rng(45678,'twister');                % Reproducibility for Ex.4
+phi      = 0.9;
+sigma2_4 = 1.0;                      % Var(eps_t)
+mu       = 0;
+Ts       = [50, 100, 200, 1000];
+R        = 1000;
+B        = 500;                      % burn-in to reduce dependence on start
 
 E4_summary = table('Size',[numel(Ts) 5], ...
     'VariableTypes',{'double','double','double','double','double'}, ...
@@ -185,51 +187,61 @@ E4_summary = table('Size',[numel(Ts) 5], ...
 
 for iT = 1:numel(Ts)
     T = Ts(iT);
+    nu = T - 2;                      % df for regression with (T-1) rows, 1 slope
+
     phi_hat = zeros(R,1);
     tstat   = zeros(R,1);
 
     for r = 1:R
+        % --- simulate AR(1) with burn-in
         TT   = T + B;
         eps  = sqrt(sigma2_4) * randn(TT,1);
         Yall = simulate_ar1_loop(TT, phi, sigma2_4, mu, mu, eps);
-        Y    = Yall(B+1:end);
+        Y    = Yall(B+1:end);        % keep last T observations
 
-        ylag = Y(1:end-1); yt = Y(2:end);
-        X = ylag;                     % no constant, mean=0
-        bhat = (X' * X) \ (X' * yt);
-        uhat = yt - X*bhat;
-        s2   = (uhat' * uhat) / (T - 1);
-        se   = sqrt( s2 / (X' * X) );
-        tstat(r) = bhat / se;         % H0: phi=0
+        % --- OLS: Y_t = phi * Y_{t-1} + u_t (no intercept since mu=0)
+        ylag = Y(1:end-1); 
+        yt   = Y(2:end);
+        X    = ylag;                  % (T-1)-by-1 regressor
+        XX   = X' * X;
+
+        bhat = XX \ (X' * yt);
+        uhat = yt - X * bhat;
+
+        % --- correct finite-sample variance and t-stat
+        s2 = (uhat' * uhat) / nu;     % unbiased residual variance: RSS/(T-2)
+        se = sqrt( s2 / XX );         % std error of slope
+        tstat(r)   = bhat / se;       % test H0: phi = 0
         phi_hat(r) = bhat;
     end
 
-    % Summaries
-    m  = mean(phi_hat);
-    sd = std(phi_hat);
+    % --- Monte Carlo summaries for this T
+    m    = mean(phi_hat);
+    sd   = std(phi_hat);
     bias = m - phi;
+
     if exist('tinv','file')
-        tcrit = tinv(0.975, T-1);   % two-sided 5%
+        tcrit = tinv(0.975, nu);      % two-sided 5% test against H0: phi = 0
     else
-        tcrit = 1.96;
+        tcrit = 1.96;                 % normal approx
     end
     rej = mean(abs(tstat) > tcrit);
 
     E4_summary{iT,:} = [T, m, sd, bias, rej];
 
-    % Plot histogram for this T
+    % --- Histogram for this T
     fh = figure('Position',[100 100 840 420]);
     histogram(phi_hat, 40, 'Normalization','pdf'); hold on; grid on
-    xline(phi, '--', 'True $\phi=0.9$', 'LabelVerticalAlignment','bottom');
-    xline(m,  '-', '$\mathrm{mean}(\hat{\phi})$', 'LabelVerticalAlignment','bottom');
-    xlabel('$\hat{\phi}$'); ylabel('Density')
-    title(['Exercise 4: OLS on AR(1), ', '$\phi=0.9$', ' (T=', num2str(T), ', R=', num2str(R), ')'], 'Interpreter','latex')
+    xline(phi, '--', 'True $\phi=0.9$', 'LabelVerticalAlignment','bottom', 'Interpreter','latex');
+    xline(m,  '-',  '$\mathrm{mean}(\hat{\phi})$', 'LabelVerticalAlignment','bottom', 'Interpreter','latex');
+    xlabel('$\hat{\phi}$', 'Interpreter','latex'); 
+    ylabel('Density', 'Interpreter','latex');
+    title(sprintf('Exercise 4: OLS on AR(1), $\\phi=0.9$ (T=%d, R=%d)', T, R), 'Interpreter','latex');
     exportFig(fh, sprintf('ex4_hist_T%d.png', T));
 end
 
 % Save table
 writetable(E4_summary, fullfile(outdir,'ex4_summary.csv'));
-
 
 %% ===================== Exercise 5 =====================
 % OLS of x_t on x_{t-1} when x_t is MA(1) with theta=0.6
