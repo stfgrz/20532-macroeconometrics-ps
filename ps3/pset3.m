@@ -1,3 +1,27 @@
+%% PS3 — 20532 Macroeconometrics 
+% Problem Set 3
+% ---------------------------------------------------------------
+% Author: Stefano Graziosi
+% Date: 2025-09-22
+% ---------------------------------------------------------------
+
+%% Housekeeping & graphics style 
+clear; clc; close all; format compact
+outdir = fullfile(pwd,'ps1/output');   % Output folder
+if ~exist(outdir,'dir'), mkdir(outdir); end
+
+% Clean, consistent figure defaults
+set(groot, 'defaultFigureColor', 'w');
+set(groot, 'defaultAxesFontName', 'Times New Roman');
+set(groot, 'defaultAxesFontSize', 12);
+set(groot, 'defaultTextInterpreter', 'latex');
+set(groot, 'defaultLegendInterpreter', 'latex');
+set(groot, 'defaultAxesTickLabelInterpreter', 'latex');
+set(groot, 'defaultLineLineWidth', 1.5);
+
+% Helper to export figures
+exportFig = @(fh, name) exportgraphics(fh, fullfile(outdir, name), 'ContentType','vector');
+
 %% Load the dataset
 file_path  = "C:\Users\matte\Documents\ESS\third semester\macroeconometrics\ps 3\data_ps3.xlsx"; % <-- insert your own path 
 data = readtable(file_path, 'Sheet', 'monetary_shock', 'VariableNamingRule', 'preserve');

@@ -1,6 +1,27 @@
-%% Setup (applies to the whole file)
-clear; clc; close all;
-rng(42); % reproducibility
+%% PS2 — 20532 Macroeconometrics 
+% Problem Set 2
+% ---------------------------------------------------------------
+% Author: Stefano Graziosi
+% Date: 2025-09-22
+% ---------------------------------------------------------------
+
+%% Housekeeping & graphics style 
+clear; clc; close all; format compact
+outdir = fullfile(pwd,'ps1/output');   % Output folder
+if ~exist(outdir,'dir'), mkdir(outdir); end
+
+% Clean, consistent figure defaults
+set(groot, 'defaultFigureColor', 'w');
+set(groot, 'defaultAxesFontName', 'Times New Roman');
+set(groot, 'defaultAxesFontSize', 12);
+set(groot, 'defaultTextInterpreter', 'latex');
+set(groot, 'defaultLegendInterpreter', 'latex');
+set(groot, 'defaultAxesTickLabelInterpreter', 'latex');
+set(groot, 'defaultLineLineWidth', 1.5);
+
+% Helper to export figures
+exportFig = @(fh, name) exportgraphics(fh, fullfile(outdir, name), 'ContentType','vector');
+
 
 %% EXERCISE 1 - A)
 phi = 1; %#ok<NASGU>
