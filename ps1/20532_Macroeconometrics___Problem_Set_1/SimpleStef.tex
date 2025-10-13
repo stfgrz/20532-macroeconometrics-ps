@@ -1,0 +1,316 @@
+%Hey, if you're using this preamble it means that it was probably written by Stefano Graziosi (me). If you see something that doesn't make sense, feel free to email me at stefano.graziosi@studbocconi.it
+%p.s. in case it's not already evident from the preamble, I'm not a professional LaTeX user, so I'm sure there are better ways to do things. I'm just trying to make it work.
+
+%------------------------------------------------------------------------------
+%           LAST UPDATE: 30-01-2025
+%------------------------------------------------------------------------------
+
+%I don't own copyright on anything, I just literally copied and pasted together a bunch of stuff.
+
+%Credit goes to the original authors.
+
+%------------------------------------------------------------------------------
+%           Packages
+%------------------------------------------------------------------------------
+
+\usepackage{fancyhdr}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[many]{tcolorbox}
+\usepackage[all]{xy}
+\usepackage{tcolorbox}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}    
+\usepackage{wrapfig}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{titlesec}
+\usepackage{halloweenmath}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{kantlipsum}
+\usepackage{pdfpages}
+
+\usepackage[T1]{fontenc}                            % Font Styling
+\usepackage{lmodern,mathrsfs}
+
+
+\usepackage{mathtools,amsthm,amssymb,amsfonts,bm}   % Math Presets
+\usepackage{thmtools,amsmath}
+\usepackage{array,tabularx,booktabs}                % Table Presets
+\usepackage{graphicx,wrapfig,float,caption}         % Figure Presets
+\usepackage{setspace,multicol}                      % Text Presets
+\usepackage{tikz,physics}                           % Physics Presets
+
+\usepackage{titlepic}
+\usepackage{pdfpages}
+
+%------------------------------------------------------------------------------
+%           Geometry
+%------------------------------------------------------------------------------
+
+\usepackage[a4paper,margin=1in]{geometry}
+%\usepackage[margin=1in]{geometry}
+
+%------------------------------------------------------------------------------
+%           Chapter and section formatting
+%------------------------------------------------------------------------------
+
+%\renewcommand{\chaptername}{Lecture}
+%\renewcommand\thesection{P~\arabic{section}}
+
+\renewcommand{\thefigure}{\thesection-\arabic{figure}}
+\renewcommand{\thetable}{\thesection-\arabic{table}}
+
+%------------------------------------------------------------------------------
+%           Colours
+%------------------------------------------------------------------------------
+
+\definecolor{sgblue}{rgb}{0, 169, 211}
+\definecolor{sggreen}{rgb}{0, 164, 0}
+\definecolor{sgpurple}{rgb}{99, 0, 165}
+\definecolor{sgyellow}{rgb}{255, 211, 0}
+\definecolor{sgorange}{rgb}{255, 127, 20}
+
+\definecolor{sbblue}{rgb}{219, 248, 254}
+\definecolor{sbgreen}{rgb}{223, 255, 218}
+\definecolor{sbpurple}{rgb}{241, 220, 255}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+%------------------------------------------------------------------------------
+%           Environments
+%------------------------------------------------------------------------------
+
+%Standard \latex box
+
+\newtcolorbox{mybox}[3][]
+{
+  colframe = #2!25,
+  colback  = #2!10,
+  coltitle = #2!20!black,  
+  title    = {#3},
+  #1,
+}
+
+%Standard "Problem" environment
+
+\newtheorem{problem}{Problem}
+
+%Personalised "Solution" environment
+
+\newenvironment{solution}[1][\it{\textcolor{MidnightBlue}{Solution}}]{\textbf{#1. } }{\textcolor{MidnightBlue}{$\square$}}
+
+
+% ----------------------------------------------------------------------
+%           Special Environments 
+% ----------------------------------------------------------------------
+
+\newlength{\spacelength}
+\settowidth{\spacelength}{\normalfont\ }
+\declaretheoremstyle[
+    headfont={\bfseries\sffamily\footnotesize},
+    notefont={\normalfont},
+    bodyfont={\normalfont},
+    headpunct={\relax},%\newline,
+    headformat={%
+        \makebox[0pt][r]{\NAME\ \NUMBER\hspace{\marginparsep}}\hskip-\spacelength{\normalsize\NOTE}},
+]{theorem}
+
+\tcolorboxenvironment{theorem}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw, 
+  borderline west={1pt}{0pt}{ForestGreen},
+  sharp corners,
+  before skip=10pt,
+  after skip=10pt,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+\declaretheorem[style=theorem]{proposition}
+
+\let\proof\relax
+\let\endproof\relax
+
+\declaretheoremstyle[
+    headfont={\bfseries\sffamily\footnotesize},
+    notefont={\normalfont},
+    bodyfont={\normalfont},
+    headpunct={\relax},%\newline,
+    headformat={%
+        \makebox[0pt][r]{\NAME\ \NUMBER\hspace{\marginparsep}}\hskip-\spacelength{\normalsize\NOTE}},
+]{theorem}
+
+\tcolorboxenvironment{proposition}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw, 
+  borderline west={1pt}{0pt}{Mulberry},
+  sharp corners,
+  before skip=10pt,
+  after skip=10pt,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+\declaretheorem[style=theorem]{theorem}
+
+\let\proof\relax
+\let\endproof\relax
+
+\declaretheoremstyle[
+    headfont={\small\scshape},
+    notefont={\normalfont},
+    bodyfont={\normalfont},
+    headpunct={\relax},
+    headformat={%
+        \makebox[0pt][r]{\NAME\hspace{\marginparsep}}\hskip-\spacelength{\NOTE}},
+]{proof}
+
+\tcolorboxenvironment{proof}{
+  boxrule=0pt,
+  boxsep=0pt,
+  blanker,
+  borderline west={1pt}{0pt}{black},
+  before skip=10pt,
+  after skip=10pt,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+\declaretheoremstyle[
+    headfont={\footnotesize\itshape},
+    notefont={\normalfont},
+    bodyfont={\normalfont},
+    headpunct={\relax},
+    headformat={%
+        \makebox[0pt][r]{\NAME\hspace{\marginparsep}}\hskip-\spacelength{\NOTE}},
+]{claim}
+
+\declaretheorem[
+    style=proof,
+    qed=\qedsymbol]{proof}
+
+\declaretheorem[style=claim]{Intuition}
+
+\theoremstyle{theorem}
+\newtheorem{ques}{Question}
+
+\theoremstyle{theorem}
+\newtheorem{definition}{Definition}
+\tcolorboxenvironment{definition}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw, 
+  borderline west={1pt}{0pt}{Cerulean},
+  sharp corners,
+  before skip=10pt,
+  after skip=10pt,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+\theoremstyle{theorem}
+\newtheorem{lemma}{Lemma}
+\tcolorboxenvironment{lemma}{
+  boxrule=0pt,
+  boxsep=0pt,
+  blanker,
+  borderline west={1pt}{0pt}{Rhodamine},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+\theoremstyle{theorem}
+\newtheorem{remark}{Remark}
+\tcolorboxenvironment{remark}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw, 
+  borderline west={1pt}{0pt}{BurntOrange},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+\theoremstyle{theorem}
+\newtheorem{corollary}{Corollary}
+\tcolorboxenvironment{corollary}{
+  boxrule=0pt,
+  boxsep=0pt,
+%  colback={White!100!WildStrawberry},
+  enhanced jigsaw,
+  borderline west={1pt}{0pt}{WildStrawberry},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+\theoremstyle{theorem}
+\newtheorem{example}{Example}
+\tcolorboxenvironment{example}{
+  boxrule=0pt,
+  boxsep=0pt,
+  blanker,
+  borderline west={1pt}{0pt}{Dandelion},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+
+\theoremstyle{claim}
+\newtheorem{intu}{Intuition}
+
+\theoremstyle{claim}
+\newtheorem{solu}{Solution}
+
+%------------------------------------------------------------------------------
+%           Code Listing Environment
+%------------------------------------------------------------------------------
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\lstset{style=mystyle}
