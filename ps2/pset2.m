@@ -1,5 +1,5 @@
-%% PS2 — 20532 Macroeconometrics 
-% Problem Set 2
+%% 20532 Macroeconometrics | Problem Set 2
+%
 % ---------------------------------------------------------------
 % Author: Stefano Graziosi
 % Date: 2025-09-22
@@ -7,7 +7,7 @@
 
 %% Housekeeping & graphics style 
 clear; clc; close all; format compact
-outdir = fullfile(pwd,'ps1/output');   % Output folder
+outdir = fullfile(pwd,'ps2/output');                                        % Output folder -> Update for each problem set
 if ~exist(outdir,'dir'), mkdir(outdir); end
 
 % Clean, consistent figure defaults
@@ -22,408 +22,345 @@ set(groot, 'defaultLineLineWidth', 1.5);
 % Helper to export figures
 exportFig = @(fh, name) exportgraphics(fh, fullfile(outdir, name), 'ContentType','vector');
 
+%% Helper functions
 
-%% EXERCISE 1 - A)
-phi = 1; %#ok<NASGU>
-T = 250;
-n_sim = 10000;
-sigma_eps = 1;
+% Q1
+simulate_rw        = @(T, sig2) cumsum([0; sqrt(sig2)*randn(T-1,1)]);       % y_t = y_{t-1}+eps_t, y_1=0
+ols     = @(y,x) deal((x'*x)\(x'*y), y - x*((x'*x)\(x'*y)));                % generic OLS
 
-% Random walk can be generated via cumulative sums
-E = sigma_eps * randn(T, n_sim);
-Yfull = cumsum(E, 1);            % y(1)=E(1), start at 0 is immaterial asymptotically
-Ylag  = Yfull(1:end-1, :);
-Ynow  = Yfull(2:end,   :);
+% (Local functions moved to the end of this script to satisfy MATLAB's
+% requirement that local functions appear after all script code.)
 
-% OLS slope without intercept (beta = sum(xy)/sum(x^2))
-num  = sum(Ylag .* Ynow, 1);
-den  = sum(Ylag .^ 2,    1);
-phihat = (num ./ den).';
+% Global settings
+z_5_left = -1.6448536269;                               % 5% one-sided Normal critical (left tail)
+chi2_95  = 3.8414588207;                                % 95% critical for chi-square(1)
+DF_tau_mu = struct('p1',-3.43,'p5',-2.86,'p10',-2.57);  % common tau_mu tabulated values
 
-figure; histogram(phihat, 50);
-xline(1, 'r--', 'LineWidth', 2);  % True value
-xline(mean(phihat), 'g--', 'LineWidth', 2);  % Sample mean
-legend('Distribution', 'True φ=1', 'Sample Mean');
+%% ===================== Exercise 1 =====================
 
-%% EXERCISE 1 - B)
-% DF regression with intercept: Δy_t = α + ρ y_{t-1} + u_t
-rej_count_normal = 0;
-alpha_sig = 0.05;
-z_alpha   = norminv(alpha_sig);  % left tail (≈ -1.645)
-t_stats   = zeros(n_sim, 1);
+%%% Question (a):
+%   Compute the empirical distribution of the OLS estimator in the case of an AR(1) with $\varphi = 1$ and $T=250$ (you are free to choose the variance of the innovation).
 
-for idx = 1:n_sim
-    epsi = sigma_eps * randn(T, 1);
-    y    = cumsum(epsi);          % phi = 1 random walk, y(1)=epsi(1)
+rng(20532,'twister');        % reproducibility
+T        = 250;              % sample length
+R        = 5000;             % Monte Carlo replications
+sigma2   = 0.6;              % variance of innovations (free choice)
+
+phi_hat_a = zeros(R,1);
+
+for r=1:R
+    y = simulate_rw(T, sigma2);
+    yt = y(2:end);  
+    x = y(1:end-1);
+    bhat = (x'*x)\(x'*yt);
+    phi_hat_a(r) = bhat;
+end
+
+% Plot histogram (standardized size and bins)
+figPos = [100 100 840 420];
+histBins = 50;
+fh_a = figure('Position', figPos, 'Renderer', 'painters');
+histogram(phi_hat_a, histBins, 'Normalization','pdf'); grid on; hold on
+xline(1,'--','True $\phi=1$','LabelVerticalAlignment','bottom');
+xlabel('$\hat{\phi}$'); ylabel('Density')
+title('(a) Empirical distribution of OLS $\hat{\phi}$ under unit root ($T=250$)')
+drawnow;
+exportFig(fh_a,'1a_phi_hat_hist.png');
+close(fh_a);
+
+fprintf('(a) mean(\\hat{phi})=%.4f, sd=%.4f, med=%.4f\n', mean(phi_hat_a), std(phi_hat_a), median(phi_hat_a));
+
+%%% Question (b):
+%   Repeat the exercise in (a) but now with a drift term equal to Construct a $t$-test for the null hypothesis $H_{0}:\ \rho=\varphi-1=0$, in a test regression: $\Delta y_{t}=\alpha+\rho y_{t-1}+\varepsilon_{t}$; against a one-sided alternative $H_{0}:\ \rho<0$.
+%   Using a standard Normal distribution, how often do you reject the null hypothesis at the $95\%$ confidence level?
+%   Is the actual distribution of the t-test symmetric? Discuss.
+
+t_b   = zeros(R,1);
+rho_b = zeros(R,1);
+
+for r=1:R
+    y    = simulate_rw(T, sigma2);
     dy   = diff(y);
     ylag = y(1:end-1);
-
-    X = [ones(T-1,1), ylag];
-    [b, se, ~, ~, s2, XtX_inv] = ols(dy, X);   % helper below
-    rhohat = b(2);
-    se_rho = sqrt(s2 * XtX_inv(2,2));
-    t_stat = rhohat / se_rho;                  % DF t-stat (intercept only)
-    t_stats(idx) = t_stat;
-
-    % "textbook" (incorrect for DF) normal rejection, kept for comparison
-    if t_stat < z_alpha
-        rej_count_normal = rej_count_normal + 1;
-    end
+    X    = [ones(T-1,1), ylag];
+    [b, u] = ols(dy, X);
+    nu   = (T-1) - size(X,2);                   % df = T-1 - 2
+    s2   = (u'*u)/nu;
+    Vb   = s2 * inv(X'*X);
+    rho_hat = b(2);
+    se_rho  = sqrt(Vb(2,2));
+    t_b(r)  = rho_hat / se_rho;
+    rho_b(r)= rho_hat;
 end
 
-rej_rate_normal = rej_count_normal / n_sim;
-fprintf('1B: Normal left-tail rejection at 5%% (incorrect benchmark): %.2f%%%%\n', 100*rej_rate_normal);
+rej_norm_left = mean(t_b < z_5_left);           % one-sided at 5% using N(0,1)
+sk_b = skewness(t_b);
 
-figure; histogram(t_stats, 50);
-title('Distribution of DF t-statistic (model: intercept)');
-xlabel('t-statistic'); ylabel('Frequency');
+fprintf(['(b) Using Normal 5%% one-sided (z=%.3f): reject rate = %.3f. ', ...
+         'Skewness of t-stat = %.3f (non-symmetric).\n'], z_5_left, rej_norm_left, sk_b);
 
-%% EXERCISE 1 - C)
-pct = [1 5 10];
-percentiles = prctile(t_stats, pct);
-disp('Percentiles of the empirical DF t-stat (intercept):');
-disp(table(pct.', percentiles.', 'VariableNames', {'Percentile','t_Statistic'}));
+% Histogram of t_b for illustration
+% Histogram of t-stat (standardized)
+fh_b = figure('Position', figPos, 'Renderer', 'painters');
+histogram(t_b, histBins, 'Normalization','pdf'); grid on; hold on
+xline(z_5_left, '--', 'Normal 5% one-sided crit','LabelVerticalAlignment','bottom');
+xlabel('$t(\hat{\rho})$'); ylabel('Density');
+title('(b) DF $t$-stat under unit root, intercept included')
+drawnow;
+exportFig(fh_b,'1b_t_hist.png');
+close(fh_b);
 
-%% EXERCISE 1 - D)
-% Random walk with drift: y_t = μ + y_{t-1} + ε_t
-mu  = 1;
-phihat_drift = zeros(n_sim, 1);
-rej_count_df = 0;
+%%% Question (c):
+%   Compute now few percentiles of the empirical distribution of the $t$-test you generated at point b. and check that they are close to those tabulated by Dickey and Fuller.
 
-for sim = 1:n_sim
-    e = sigma_eps * randn(T,1);
-    y = zeros(T,1);
+% Dickey–Fuller "tabulated" criticals for T~250
+% tau_mu (intercept only, no trend) and tau_trend (intercept + trend)
+DFcrit.tau_mu   = struct('p1',-3.46,'p5',-2.88,'p10',-2.57);
+DFcrit.tau_trend= struct('p1',-3.99,'p5',-3.43,'p10',-3.12);
+
+pct_vec = [1 5 10 25 50 75 90 95 99];
+emp_pct = prctile(t_b, pct_vec);
+DF_tab  = [DFcrit.tau_mu.p1, DFcrit.tau_mu.p5, DFcrit.tau_mu.p10]; % 1%,5%,10% (left tail)
+
+% Print a compact comparison
+fprintf('(c) Empirical DF t percentiles (%%):\n');
+disp(table(pct_vec(:), emp_pct(:), 'VariableNames',{'percentile','empirical_t'}));
+fprintf('Tabulated DF (tau_mu) ~ T=250: 1%%=%.2f, 5%%=%.2f, 10%%=%.2f\n', ...
+        DFcrit.tau_mu.p1, DFcrit.tau_mu.p5, DFcrit.tau_mu.p10);
+
+% Save CSV
+writetable(table(pct_vec(:), emp_pct(:), 'VariableNames',{'percentile','empirical_t'}), ...
+           fullfile(outdir,'1c_empirical_t_percentiles.csv'));
+
+% Compare left-tail 1/5/10% to DF τ_μ and report the gaps (empirical − table)
+left_tail   = [1 5 10];
+emp_left    = prctile(t_b, left_tail);
+DF_left     = [DFcrit.tau_mu.p1; DFcrit.tau_mu.p5; DFcrit.tau_mu.p10];
+delta_left  = emp_left(:) - DF_left;
+
+comp_tbl = table(left_tail(:), emp_left(:), DF_left, delta_left, ...
+    'VariableNames', {'percentile','empirical_t','DF_tau_mu','emp_minus_tab'});
+
+disp('Comparison to DF \tau_\mu at 1/5/10% (empirical − table):');
+disp(comp_tbl);
+
+% Check rejection using DF 5% critical (should be about 0.05 under H0)
+rej_DF5 = mean(t_b < DFcrit.tau_mu.p5);
+fprintf('Using DF \\tau_\\mu 5%% critical (%.2f): empirical rejection = %.3f\n', ...
+        DFcrit.tau_mu.p5, rej_DF5);
+
+% Save comparison table
+writetable(comp_tbl, fullfile(outdir,'1c_empirical_vs_DF_tau_mu.csv'));
+%% ===================== Exercise 2 =====================
+
+%%% Monte Carlo settings
+T   = 250;         % sample size
+R   = 2000;        % replications (raise if you like)
+B   = 500;         % burn-in where needed
+nu  = T - 2;       % df for slope t-test with constant
+
+if exist('tinv','file')
+    tcrit = tinv(0.975, nu);     % two-sided 5%
+else
+    tcrit = 1.96;                % Normal approx
+end
+
+%% Containers (one row per Case)
+caseNames = ["Case 1: both stationary", ...
+             "Case 2: I(1) vs I(0)", ...
+             "Case 3: I(1) vs I(1) (spurious)", ...
+             "Case 4: I(1) & cointegrated"];
+
+K = numel(caseNames);
+mean_b1   = zeros(K,1);
+sd_b1     = zeros(K,1);
+rej_rate  = zeros(K,1);
+mean_R2   = zeros(K,1);
+mean_rhoU = zeros(K,1);      % residual lag-1 corr
+mean_DW   = zeros(K,1);      % Durbin–Watson
+
+% Store full draws for distributions (for plots)
+t_all  = cell(K,1);
+R2_all = cell(K,1);
+
+%% ---------- CASE 1: both stationary (OLS is meaningful) ----------
+% y_t = 0.5 y_{t-1} + e^y_t,  z_t = -0.3 z_{t-1} + e^z_t  (independent)
+phi_y = 0.5; phi_z = -0.3;
+sig2y = 1.0; sig2z = 1.0;
+
+[b1, tstat, R2, rhoU, DW] = deal(zeros(R,1));
+for r = 1:R
+    yy = simulate_ar1_loop(T+B, phi_y, sig2y, 0, 0);
+    zz = simulate_ar1_loop(T+B, phi_z, sig2z, 0, 0);
+    y = yy(B+1:end); z = zz(B+1:end);
+
+    [b, se, tvec, R2r, u, DWr] = ols_with_const(y, z);
+    b1(r)   = b(2);
+    tstat(r)= tvec(2);
+    R2(r)   = R2r;
+    rhoU(r) = lag1corr(u);
+    DW(r)   = DWr;
+end
+[mean_b1(1), sd_b1(1), rej_rate(1), mean_R2(1), mean_rhoU(1), mean_DW(1)] = ...
+    summarize_case(b1, tstat, R2, rhoU, DW, tcrit);
+t_all{1}  = tstat; R2_all{1} = R2;
+
+%% ---------- CASE 2: I(1) vs I(0) (meaningless) ----------
+% y_t is random walk; z_t stationary AR(1)
+phi_z = 0.6;
+for r = 1:R
+    y = cumsum(randn(T,1));                 % I(1), variance 1
+    zz = simulate_ar1_loop(T+B, phi_z, 1.0, 0, 0);
+    z = zz(B+1:end);
+
+    [b, se, tvec, R2r, u, DWr] = ols_with_const(y, z);
+    b1(r)   = b(2);
+    tstat(r)= tvec(2);
+    R2(r)   = R2r;
+    rhoU(r) = lag1corr(u);
+    DW(r)   = DWr;
+end
+[mean_b1(2), sd_b1(2), rej_rate(2), mean_R2(2), mean_rhoU(2), mean_DW(2)] = ...
+    summarize_case(b1, tstat, R2, rhoU, DW, tcrit);
+t_all{2}  = tstat; R2_all{2} = R2;
+
+%% ---------- CASE 3: I(1) vs I(1) independent (classic spurious) ----------
+for r = 1:R
+    y = cumsum(randn(T,1));     % I(1)
+    z = cumsum(randn(T,1));     % I(1), independent
+
+    [b, se, tvec, R2r, u, DWr] = ols_with_const(y, z);
+    b1(r)   = b(2);
+    tstat(r)= tvec(2);
+    R2(r)   = R2r;
+    rhoU(r) = lag1corr(u);
+    DW(r)   = DWr;
+end
+[mean_b1(3), sd_b1(3), rej_rate(3), mean_R2(3), mean_rhoU(3), mean_DW(3)] = ...
+    summarize_case(b1, tstat, R2, rhoU, DW, tcrit);
+t_all{3}  = tstat; R2_all{3} = R2;
+
+% Double check: differencing fixes the spurious regression in Case 3
+rej_diff = nan;
+do_diff_fix = true;
+if do_diff_fix
+    tstatD = zeros(R,1);
+    for r = 1:R
+        y = cumsum(randn(T,1));
+        z = cumsum(randn(T,1));
+        dy = diff(y); dz = diff(z);
+        [~, ~, tvec, ~] = ols_with_const(dy, dz);
+        tstatD(r) = tvec(2);
+    end
+    rej_diff = mean(abs(tstatD) > tcrit);
+end
+
+%% ---------- CASE 4: I(1) & cointegrated (meaningful despite I(1)) ----------
+% y_t = tau_t + eps_y,t,  z_t = tau_t + eps_z,t  with common RW trend tau_t
+sig2_tau = 1.0; sig2_y = 0.5; sig2_z = 0.5;
+for r = 1:R
+    tau = cumsum(sqrt(sig2_tau) * randn(T,1));
+    y   = tau + sqrt(sig2_y) * randn(T,1);
+    z   = tau + sqrt(sig2_z) * randn(T,1);
+
+    [b, se, tvec, R2r, u, DWr] = ols_with_const(y, z); % slope ~ 1
+    b1(r)   = b(2);
+    tstat(r)= tvec(2);
+    R2(r)   = R2r;
+    rhoU(r) = lag1corr(u);       % should be moderate (< 1)
+    DW(r)   = DWr;
+end
+[mean_b1(4), sd_b1(4), rej_rate(4), mean_R2(4), mean_rhoU(4), mean_DW(4)] = ...
+    summarize_case(b1, tstat, R2, rhoU, DW, tcrit);
+t_all{4}  = tstat; R2_all{4} = R2;
+
+%% ----------- Save a compact summary table -----------
+Summary = table(caseNames.', mean_b1, sd_b1, rej_rate, mean_R2, mean_rhoU, mean_DW, ...
+    'VariableNames', {'Case','mean_beta1','sd_beta1','rej_H0_at_5pct','mean_R2','mean_rho1_resid','mean_DW'});
+if do_diff_fix
+    Summary.rej_diff_case3 = [NaN; NaN; rej_diff; NaN];
+end
+writetable(Summary, fullfile(outdir,'spurious_regression_summary.csv'));
+disp(Summary);
+
+%% ----------- Plots: t-statistics & R^2 distributions -----------
+% t-stat histograms
+for k = 1:K
+    fh = figure('Position', figPos, 'Renderer', 'painters'); grid on; hold on
+    histogram(t_all{k}, histBins, 'Normalization','pdf'); 
+    xline(-tcrit, '--', '$-t_{0.975}$','LabelVerticalAlignment','bottom'); xline(tcrit, '--', '$t_{0.975}$','LabelVerticalAlignment','bottom');
+    title(sprintf('t-stat of slope: %s (R=%d, T=%d)', caseNames(k), R, T));
+    xlabel('$t(\hat{a}_1)$'); ylabel('Density');
+    drawnow;
+    exportFig(fh, sprintf('tstat_hist_case%d.png', k));
+    close(fh);
+end
+
+% R^2 histograms
+for k = 1:K
+    fh = figure('Position', figPos, 'Renderer', 'painters'); grid on; hold on
+    histogram(R2_all{k}, histBins, 'Normalization','pdf'); 
+    title(sprintf('$R^2$ distribution: %s (R=%d, T=%d)', caseNames(k), R, T));
+    xlabel('$R^2$'); ylabel('Density');
+    drawnow;
+    exportFig(fh, sprintf('R2_hist_case%d.png', k));
+    close(fh);
+end
+
+% Quick illustration for one replication of Case 3 (time series + scatter)
+y = cumsum(randn(T,1)); z = cumsum(randn(T,1));
+[b, ~, ~, ~, u] = ols_with_const(y, z);
+fh = figure('Position',[100 100 880 380], 'Renderer', 'painters');
+tiledlayout(1,2,'Padding','compact','TileSpacing','compact');
+nexttile; plot([y z]); grid on; legend('$y_t$','$z_t$','Location','best');
+title('Case 3 example: two independent random walks'); xlabel('t');
+nexttile; scatter(z,y,15,'filled'); grid on; hold on
+xline(mean(z),'--'); yline(mean(y),'--');
+title(sprintf('Scatter (\\beta_1=%.2f), residuals are I(1)', b(2)));
+xlabel('$z_t$'); ylabel('$y_t$');
+drawnow;
+exportFig(fh,'case3_example_scatter_timeseries.png');
+close(fh);
+
+%% ------------------------ Functions used --------------------------
+function Y = simulate_ar1_loop(T, phi, sigma2, mu, Y0)
+    if nargin < 5, Y0 = mu; end
+    eps = sqrt(sigma2) * randn(T,1);
+    Y       = zeros(T,1);
+    Y(1)    = mu + phi*(Y0 - mu) + eps(1);
     for t = 2:T
-        y(t) = mu + y(t-1) + e(t);
-    end
-
-    % OLS slope of y_t on y_{t-1} (no intercept), like in 1A
-    Ynow = y(2:T);
-    Ylag = y(1:T-1);
-    phihat_drift(sim) = (Ylag\Ynow);
-
-    % Proper ADF with drift (intercept)
-    [h, pValue] = adftest(y, 'model', 'ARD');
-    if h == 1 && pValue < 0.05
-        rej_count_df = rej_count_df + 1;
+        Y(t) = mu + phi*(Y(t-1) - mu) + eps(t);
     end
 end
 
-figure; histogram(phihat_drift, 30);
-title('Empirical Distribution of \phî with drift (RW with drift, no intercept in OLS)');
-xlabel('\phî'); ylabel('Frequency');
-
-rej_rate_df = rej_count_df / n_sim;
-fprintf('1D: ADF(ARD) rejection rate at 5%%: %.2f%%%%\n', 100*rej_rate_df);
-
-%% Exercise 1-E
-% F-test for adding y_{t-1} in Δy regression with intercept
-rng(7); % new seed to match the spirit of your section
-mu = 1; phi = 1; sigma_eps = 1; T = 250; n_sim = 10000;
-
-F_stats = zeros(n_sim,1);
-rej_count_F = 0;
-
-for sim = 1:n_sim
-    e = sigma_eps * randn(T,1);
-    y = zeros(T,1);
-    for t = 2:T
-        y(t) = mu + phi*y(t-1) + e(t); % RW with drift
-    end
-    dy = diff(y);
-    x_full = [ones(T-1,1), y(1:T-1)];
-    [~, ~, r_full, SSR_full] = ols(dy, x_full);
-
-    x_res  = ones(T-1,1);                 % restricted: intercept only
-    [~, ~, r_res,  SSR_res ] = ols(dy, x_res);
-
-    q  = 1;                 % one restriction (coefficient on y_{t-1})
-    n  = T-1; k = 2;        % T-1 obs, 2 params in the unrestricted model
-    F  = ((SSR_res - SSR_full)/q) / (SSR_full/(n-k));
-    F_stats(sim) = F;
-
-    if F > finv(0.95, q, n-k)
-        rej_count_F = rej_count_F + 1;
-    end
+function [b, se, tstat, R2, u, DW] = ols_with_const(y, z)
+    % OLS of y on [1 z], standard errors, t-stats, R^2, residuals, DW
+    T = length(y);
+    X = [ones(T,1), z(:)];
+    XX = X' * X;
+    b  = XX \ (X' * y);
+    u  = y - X * b;
+    k  = size(X,2);
+    s2 = (u' * u) / (T - k);
+    V  = s2 * inv(XX);
+    se = sqrt(diag(V));
+    tstat = b ./ se;
+    R2 = 1 - (u' * u) / sum( (y - mean(y)).^2 );
+    DU = diff(u);
+    DW = sum(DU.^2) / (u' * u);
 end
 
-rejection_rate_F = rej_count_F / n_sim;
-critF = finv(0.95, 1, (T-1)-2);
-
-figure;
-histogram(F_stats, 50, 'Normalization', 'probability');
-hold on; xline(critF, 'r--', 'LineWidth', 1.5);
-title('F-statistics: Δy_t on [1, y_{t-1}] vs [1]');
-xlabel('F'); ylabel('Proportion'); grid on; hold off;
-
-fprintf('1E: F-test rejection rate at 5%% (F(1,%d) crit=%.3f): %.2f%%%%\n', (T-1)-2, critF, 100*rejection_rate_F);
-
-%% Exercise 1-f
-% DF with deterministic trend: simulate null y_t = α + β t + y_{t-1} + ε_t
-rng(123);
-T = 100;
-numSimulations = 10000;
-alpha0 = 1; beta0 = 0.5;
-tStats = zeros(numSimulations,1);
-
-burn = 50;
-for sim = 1:numSimulations
-    Tlong = T + burn;
-    tvec  = (1:Tlong).';
-    epsi  = randn(Tlong,1);
-    y     = zeros(Tlong,1);
-    for t = 2:Tlong
-        y(t) = alpha0 + beta0*t + y(t-1) + epsi(t);   % unit root with trend
-    end
-    y = y(burn+1:end);           % drop burn-in to wash out y(0)
-
-    dy   = diff(y);
-    ylag = y(1:end-1);
-    trend= (1:T-1).';
-
-    X = [ones(T-1,1), trend, ylag];
-    [b, ~, ~, ~, s2, XtX_inv] = ols(dy, X);
-    tStats(sim) = b(3) / sqrt(s2 * XtX_inv(3,3));     % DF t-stat for γ=0 on y_{t-1}
+function r1 = lag1corr(u)
+    u1 = u(1:end-1); u2 = u(2:end);
+    r1 = ( (u1 - mean(u1))' * (u2 - mean(u2)) ) / ( std(u1) * std(u2) * (numel(u1)-1) );
 end
 
-critVal5 = prctile(tStats, 5);
-critVal1 = prctile(tStats, 1);
-fprintf('1f: DF(trend) criticals (empirical): 5%%=%.3f, 1%%=%.3f\n', critVal5, critVal1);
-
-% Now test a new trend series
-alpha_new = 1.5; beta_new = 0.3;
-eps_new   = randn(T,1);
-t_values  = (1:T).';
-y_new     = zeros(T,1);
-for t = 2:T
-    y_new(t) = alpha_new + beta_new*t + y_new(t-1) + eps_new(t);
+function [m_b, sd_b, rej, m_R2, m_rho, m_DW] = summarize_case(b1, tstat, R2, rhoU, DW, tcrit)
+    m_b   = mean(b1);
+    sd_b  = std(b1);
+    rej   = mean(abs(tstat) > tcrit);
+    m_R2  = mean(R2);
+    m_rho = mean(rhoU);
+    m_DW  = mean(DW);
 end
 
-dy_new   = diff(y_new);
-ylag_new = y_new(1:end-1);
-trend_new= (1:T-1).';
-X_new    = [ones(T-1,1), trend_new, ylag_new];
-[b_new, ~, ~, ~, s2_new, XtX_inv_new] = ols(dy_new, X_new);
-t_stat_new = b_new(3) / sqrt(s2_new * XtX_inv_new(3,3));
-reject_5 = (t_stat_new < critVal5);
-reject_1 = (t_stat_new < critVal1);
-
-fprintf('1f: DF(trend) t-stat on new series: %.3f | reject@5%%=%d, reject@1%%=%d\n', t_stat_new, reject_5, reject_1);
-
-figure;
-histogram(tStats, 'Normalization', 'pdf'); hold on;
-[f, xi] = ksdensity(tStats); plot(xi, f, 'LineWidth', 2);
-xline(critVal5, 'r--', 'LineWidth', 2, 'DisplayName', '5%');
-xline(critVal1, 'g--', 'LineWidth', 2, 'DisplayName', '1%');
-title('DF(trend) empirical distribution (null)'); xlabel('t'); ylabel('Density');
-legend('Histogram','Kernel Density','5%','1%'); grid on; hold off;
-
-figure;
-plot(t_values, y_new, 'LineWidth', 1.5); hold on;
-plot(t_values, alpha_new + beta_new*t_values, 'r--', 'LineWidth', 1.2);
-title('New deterministic trend with unit root'); xlabel('Time'); ylabel('y_t');
-legend('y_t','trend','Location','best'); grid on;
-
-%% Exercise 2
-rng(42);
-T = 250;
-n_sim = 10000;
-sigma_eps = 1;
-
-phi_Y = [0.1, 1, 1, 1];
-phi_Z = [0.1, 0.1, 1, 1];
-
-coef = zeros(n_sim, 4);
-t_stat_reg = zeros(n_sim, 4);
-R2 = zeros(n_sim, 4);
-
-for sim = 1:n_sim
-    for casus = 1:4
-        Y = zeros(T,1);  eY = sigma_eps * randn(T,1);
-        for t = 2:T, Y(t) = phi_Y(casus)*Y(t-1) + eY(t); end
-
-        if casus == 4
-            eZ = sigma_eps * randn(T,1);
-            Z  = Y + eZ;
-        else
-            Z = zeros(T,1); eZ = sigma_eps * randn(T,1);
-            for t = 2:T, Z(t) = phi_Z(casus)*Z(t-1) + eZ(t); end
-        end
-
-        [beta, tstat, r2] = run_regression(Y, Z);   % updated helper below
-        coef(sim, casus)     = beta;
-        t_stat_reg(sim,casus)= tstat;
-        R2(sim, casus)       = r2;
-    end
-end
-
-case_labels = {'Case 1','Case 2','Case 3','Case 4'}';
-summary_table = table(case_labels, mean(coef).', mean(t_stat_reg).', mean(R2).', ...
-    'VariableNames', {'Case','Mean_Coefficient','Mean_t_Statistic','Mean_R2'});
-disp(summary_table);
-
-%% Exercise 3: Granger causality tests
-% NOTE: set your own path below
-file_path = 'C:\Users\allic\Downloads\Romer_Romer.xlsx'; % <--- change to your path
-data = readtable(file_path, 'VariableNamingRule','preserve');
-data.Properties.VariableNames = {'Time','Inflation','Unemployment','FFR','Romer_Shocks'};
-
-Y = [data.Inflation, data.Unemployment, data.FFR, data.Romer_Shocks];
-numseries = size(Y,2);
-numLags = 4;
-
-Y0  = Y(1:numLags, :);
-Yest= Y(numLags+1:end, :);
-
-VARmodel = varm(numseries, numLags);
-VARmodel.SeriesNames = {'Inflation','Unemployment','FFR','Romer_Shocks'};
-BestMdl = estimate(VARmodel, Yest, 'Y0', Y0);
-
-fprintf('\nGranger causality test results with four lags:\n');
-
-[h, pTbl] = gctest(BestMdl, 'Cause', 4, 'Effect', 1);
-p = pTbl.PValue;
-fprintf('Romer shocks -> Inflation, p=%.4f | %s\n', p, ternary(h,'Reject','Fail to reject'));
-
-[h, pTbl] = gctest(BestMdl, 'Cause', 4, 'Effect', 2);
-p = pTbl.PValue;
-fprintf('Romer shocks -> Unemployment, p=%.4f | %s\n', p, ternary(h,'Reject','Fail to reject'));
-
-[h, pTbl] = gctest(BestMdl, 'Cause', 4, 'Effect', 3);
-p = pTbl.PValue;
-fprintf('Romer shocks -> FFR, p=%.4f | %s\n\n', p, ternary(h,'Reject','Fail to reject'));
-
-for j = 1:3
-    [h, pTbl] = gctest(BestMdl, 'Cause', j, 'Effect', 4);
-    p = pTbl.PValue;
-    fprintf('%s -> Romer shocks, p=%.4f | %s\n', BestMdl.SeriesNames{j}, p, ternary(h,'Reject','Fail to reject'));
-end
-
-%% Exercise 4
-beta = 0.6;
-T = 500;
-N = 1000;
-num_periods = 10;
-
-% Structural shocks covariance
-cov_u = [1, 0; 0, 0.8];
-
-% Generate one realization (for the "true" IRFs & a baseline VAR)
-rng(100);
-shocks = mvnrnd([0, 0], cov_u, T).';  % 2×T
-
-x = zeros(1,T); y = zeros(1,T);
-for t = 3:T
-    x(t) = shocks(1,t) + shocks(2,t-2);
-    y(t) = (beta/(1-beta))*shocks(1,t) + (beta^2/(1-beta))*shocks(2,t) + beta*shocks(2,t-1);
-end
-data = [x' y'];
-
-% True IRFs
-true_irf_eta      = zeros(2, num_periods);
-true_irf_epsilon  = zeros(2, num_periods);
-for h = 1:num_periods
-    true_irf_eta(1,h)     = (h == 1);                   % x ← η at h=0
-    true_irf_eta(2,h)     = (beta/(1-beta)) * (h == 1); % y ← η at h=0
-
-    true_irf_epsilon(1,h) = (h == 3) * 1;               % x ← ε at h=2 (coefficient 1)
-    if     h == 1, true_irf_epsilon(2,h) =  beta^2/(1-beta);
-    elseif h == 2, true_irf_epsilon(2,h) =  beta;
-    else,           true_irf_epsilon(2,h) =  0;
-    end
-end
-
-% Estimate baseline VAR(4) and compute residuals
-lags = 4;
-model = varm(2, lags);
-EstMdl = estimate(model, data);
-% irf returns an H×K×K array of responses to one-s.d. reduced-form shocks
-% If you prefer Cholesky-orthogonalized IRFs (identification), use:
-% irf(EstMdl, 'NumObs', num_periods, 'Method', 'orthogonalized');
-IRF0 = irf(EstMdl, 'NumObs', num_periods);
-
-% Monte Carlo over the DGP + re-estimated VARs and their IRFs
-irf_estimates = zeros(num_periods, 2, 2, N);
-parfor (iMC = 1:N)
-    shocks_i = mvnrnd([0, 0], cov_u, T).';
-    xi = zeros(1,T); yi = zeros(1,T);
-    for t = 3:T
-        xi(t) = shocks_i(1,t) + shocks_i(2,t-2);
-        yi(t) = (beta/(1-beta))*shocks_i(1,t) + (beta^2/(1-beta))*shocks_i(2,t) + beta*shocks_i(2,t-1);
-    end
-    dat_i   = [xi' yi'];
-    mdl_i   = estimate(varm(2, lags), dat_i);
-    irf_i   = irf(mdl_i, 'NumObs', num_periods);
-    irf_estimates(:,:,:,iMC) = irf_i;
-end
-
-irf_mean = mean(irf_estimates, 4);
-irf_5th  = prctile(irf_estimates, 5,  4);
-irf_95th = prctile(irf_estimates, 95, 4);
-
-% Plot true vs estimated IRFs
-figure;
-for iVar = 1:2
-    for jShock = 1:2
-        subplot(2,2,(iVar-1)*2 + jShock);
-        if jShock == 1
-            plot(0:num_periods-1, true_irf_eta(iVar,:), 'k', 'LineWidth', 2); hold on;
-        else
-            plot(0:num_periods-1, true_irf_epsilon(iVar,:), 'k', 'LineWidth', 2); hold on;
-        end
-        plot(0:num_periods-1, squeeze(irf_mean(:,iVar,jShock)), 'b', 'LineWidth', 1.5);
-        plot(0:num_periods-1, squeeze(irf_5th(:,iVar,jShock)), 'b--');
-        plot(0:num_periods-1, squeeze(irf_95th(:,iVar,jShock)), 'b--');
-        title(sprintf('Shock %d \x2192 var %d', jShock, iVar));
-        xlabel('Horizon'); ylabel('Response'); grid on; hold off;
-        legend('True','Mean','5th','95th','Location','best');
-    end
-end
-
-% Invertibility check
-beta = 0.6;
-ma_poly_x = [1 0 1];                 % 1 + L^2
-% For y: Θ(L) ∝ 1 + ((1-β)/β) L   (scale-free for roots)
-ma_poly_y = [1 (1-beta)/beta];
-
-roots_x = roots(ma_poly_x);
-roots_y = roots(ma_poly_y);
-disp('Roots of MA polynomial for x_t (1 + L^2):'); disp(roots_x);
-disp('Roots of MA polynomial for y_t (normalized 1 + cL):'); disp(roots_y);
-
-invertible_x = all(abs(roots_x) > 1);
-invertible_y = all(abs(roots_y) > 1);
-
-disp( ternary(invertible_x,'x_t MA is invertible.','x_t MA is NOT invertible.') );
-disp( ternary(invertible_y,'y_t MA is invertible.','y_t MA is NOT invertible.') );
-
-%% Functions used
-function [beta, t_stat, R2] = run_regression(Y, Z)
-    % OLS of Y on [1 Z], with robust fundamentals
-    X = [ones(length(Z),1), Z];
-    [b, ~, ~, ~, s2, XtX_inv, resid] = ols(Y, X);
-    beta = b(2);
-    se   = sqrt(s2 * XtX_inv(2,2));
-    t_stat = beta / se;
-
-    SS_res = sum(resid.^2);
-    SS_tot = sum((Y - mean(Y)).^2);
-    R2 = 1 - SS_res/SS_tot;
-end
-
-function [b, se, yhat, e, s2, XtX_inv, resid] = ols(y, X)
-    % Basic OLS with classic covariance
-    XtX = X' * X;
-    XtX_inv = inv(XtX);
-    b = XtX_inv * (X' * y);
-    yhat = X * b;
-    resid = y - yhat;
-    n = size(X,1); k = size(X,2);
-    s2 = (resid' * resid) / (n - k);
-    se = sqrt(diag(s2 * XtX_inv));
-    e  = resid; % alias
-end
-
-function out = ternary(cond, a, b)
-    if cond, out = a; else, out = b; end
-end
