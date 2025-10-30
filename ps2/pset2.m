@@ -7,8 +7,8 @@
 
 %% Housekeeping & graphics style 
 clear; clc; close all; format compact
-outdir = fullfile(pwd,'ps2/output');                                        % Output folder -> Update for each problem set
-if ~exist(outdir,'dir'), mkdir(outdir); end
+outdir = fullfile(pwd,'ps2/output');                                        % Output folder
+if ~exist(outdir,'dir'), mkdir(outdir); end                                 % Well if it doesn't exist, create it
 
 % Clean, consistent figure defaults
 set(groot, 'defaultFigureColor', 'w');
@@ -59,13 +59,13 @@ end
 % Plot histogram (standardized size and bins)
 figPos = [100 100 840 420];
 histBins = 50;
-fh_a = figure('Position', figPos, 'Renderer', 'painters');
+fh_a = figure('Position', figPos);
 histogram(phi_hat_a, histBins, 'Normalization','pdf'); grid on; hold on
 xline(1,'--','True $\phi=1$','LabelVerticalAlignment','bottom');
 xlabel('$\hat{\phi}$'); ylabel('Density')
 title('(a) Empirical distribution of OLS $\hat{\phi}$ under unit root ($T=250$)')
 drawnow;
-exportFig(fh_a,'1a_phi_hat_hist.png');
+exportFig(fh_a,'1a_phi_hat_hist.pdf');
 close(fh_a);
 
 fprintf('(a) mean(\\hat{phi})=%.4f, sd=%.4f, med=%.4f\n', mean(phi_hat_a), std(phi_hat_a), median(phi_hat_a));
@@ -101,13 +101,13 @@ fprintf(['(b) Using Normal 5%% one-sided (z=%.3f): reject rate = %.3f. ', ...
 
 % Histogram of t_b for illustration
 % Histogram of t-stat (standardized)
-fh_b = figure('Position', figPos, 'Renderer', 'painters');
+fh_b = figure('Position', figPos);
 histogram(t_b, histBins, 'Normalization','pdf'); grid on; hold on
 xline(z_5_left, '--', 'Normal 5% one-sided crit','LabelVerticalAlignment','bottom');
 xlabel('$t(\hat{\rho})$'); ylabel('Density');
 title('(b) DF $t$-stat under unit root, intercept included')
 drawnow;
-exportFig(fh_b,'1b_t_hist.png');
+exportFig(fh_b,'1b_t_hist.pdf');
 close(fh_b);
 
 %%% Question (c):
@@ -151,6 +151,121 @@ fprintf('Using DF \\tau_\\mu 5%% critical (%.2f): empirical rejection = %.3f\n',
 
 % Save comparison table
 writetable(comp_tbl, fullfile(outdir,'1c_empirical_vs_DF_tau_mu.csv'));
+
+%%% Question (d)
+% Compute the empirical distribution of the OLS in the case of a random walk with drift and $T = 250$ and study the performance of the Dickey--Fuller test.
+
+rng(20532,'twister');                      % reproducibility
+a0_drift = 0.5;                            % drift (Enders' example uses 0.5)
+R        = 5000;                           % Monte Carlo reps (reuse if defined above)
+T        = 250;                            % sample length (reuse if defined above)
+sigma2   = 0.6;                            % variance (reuse if defined above)
+
+simulate_rw_drift = @(T, sig2, mu) cumsum([0; mu + sqrt(sig2)*randn(T-1,1)]);
+
+phi_hat_d  = zeros(R,1);                   % OLS slope from y_t on [1, y_{t-1}]
+alpha_hat_d= zeros(R,1);                   % OLS intercept
+t_d        = zeros(R,1);                   % DF t-stat on ρ
+rho_d      = zeros(R,1);                   % ρ-hat
+
+for r=1:R
+    y    = simulate_rw_drift(T, sigma2, a0_drift);
+    % OLS of y_t on [1, y_{t-1}] to look at empirical dist of \hat{\phi} under drifted RW
+    yt   = y(2:end);
+    xlag = y(1:end-1);
+    X01  = [ones(T-1,1), xlag];
+    [b01,u01] = ols(yt, X01);                 
+    alpha_hat_d(r) = b01(1);
+    phi_hat_d(r)   = b01(2);
+
+    % Dickey–Fuller regression with intercept (\tau_{\mu} case)
+    dy   = diff(y);
+    Xdf  = [ones(T-1,1), xlag];
+    [b,u] = ols(dy, Xdf);
+    nu   = (T-1) - size(Xdf,2);               % df = T-1 - 2
+    s2   = (u'*u)/nu;
+    Vb   = s2 * inv(Xdf'*Xdf);
+    rho_hat = b(2);
+    se_rho  = sqrt(Vb(2,2));
+    t_d(r)  = rho_hat / se_rho;
+    rho_d(r)= rho_hat;
+end
+
+% Plot empirical dist of \hat\phi
+figPos   = [100 100 840 420];
+histBins = 50;
+fh_d1 = figure('Position', figPos);
+histogram(phi_hat_d, histBins, 'Normalization','pdf'); grid on; hold on
+xline(1,'--','True $\phi=1$','LabelVerticalAlignment','bottom');
+xlabel('$\hat{\phi}$'); ylabel('Density');
+title('(d) OLS $\hat{\phi}$ under RW+drift ($T=250$)')
+exportFig(fh_d1,'1d_phi_hat_hist.pdf'); close(fh_d1);
+
+% DF rejection using Normal vs DF (τ_μ) 5% left-tail
+z_5_left   = -1.6448536269;                             % from your header
+rej_norm_d = mean(t_d < z_5_left);
+rej_DF5_d  = mean(t_d < DFcrit.tau_mu.p5);              % τ_μ criticals from your (c)
+
+fprintf(['(d) OLS under RW+drift: mean(phi-hat)=%.4f, sd=%.4f.\n' ...
+         '    DF (one-sided) reject@5%% using Normal: %.3f; using DF τ_μ: %.3f\n'], ...
+        mean(phi_hat_d), std(phi_hat_d), rej_norm_d, rej_DF5_d);
+
+writetable(table(phi_hat_d, alpha_hat_d, t_d, rho_d), fullfile(outdir,'1d_rw_drift_results.csv'));
+
+%%% Question(e)
+%Construct an F-test for the null hypothesis $H_{0}$: there is unit root, against the alternative $H_{1}$: there is no unit root using a $\chi^{2}$ distribution (how many degrees of freedom?). How often do you reject $H_{0}$ at 95\% confidence?
+
+% Wald test on ρ=0 using χ^2(1) ~ t^2 (large-sample). Report size under H0.
+chi2_95 = 3.8414588207;                        % from your header
+chi2_stat = t_d.^2;                             % t^2 ~ \Chi^2(1)
+rej_chi2  = mean(chi2_stat > chi2_95);
+
+fprintf('(e) Wald χ^2 test (df=1) reject@95%% under H0 (RW+drift): %.3f\n', rej_chi2);
+
+% (Optional) visualize t and χ^2 stats
+fh_e1 = figure('Position', figPos);
+histogram(t_d, histBins, 'Normalization','pdf'); grid on; hold on
+xline(-sqrt(chi2_95),'--','$\pm \sqrt{\chi^2_{0.95;1}}$','LabelVerticalAlignment','bottom');
+xline(+sqrt(chi2_95),'--');
+xlabel('$t(\hat{\rho})$'); ylabel('Density'); title('(e) DF t-stats under H_0 (RW+drift)')
+exportFig(fh_e1,'1e_t_hist_RWdrift.pdf'); close(fh_e1);
+
+%%% Question (f)
+% Generate now data from a deterministic time trend and perform a DF test using the correct distribution for the test with null hypothesis $H_{0}$: there is unit root. How often do you reject the null? \emph{(hint: you can find additional details in Enders).}
+
+beta0 = 0.0; 
+beta1 = 0.05;                                   % slope of deterministic trend
+R      = 5000;
+tvec   = (1:T)';
+
+t_f   = zeros(R,1);                             % t-stat on \rho with trend
+rho_f = zeros(R,1);
+
+for r=1:R
+    eps = sqrt(sigma2)*randn(T,1);
+    y   = beta0 + beta1*tvec + eps;             % trend-stationary, iid errors
+    dy  = diff(y);
+    ylag= y(1:end-1);
+    t2  = tvec(2:end);
+    Xtr = [ones(T-1,1), t2, ylag];
+    [b,u] = ols(dy, Xtr);
+    nu   = (T-1) - size(Xtr,2);
+    s2   = (u'*u)/nu;
+    Vb   = s2 * inv(Xtr'*Xtr);
+    rho_hat = b(3);
+    se_rho  = sqrt(Vb(3,3));
+    t_f(r)  = rho_hat / se_rho;
+    rho_f(r)= rho_hat;
+end
+
+% Use τ_τ 5% left-tail (with trend)
+rej_trend_DF5 = mean(t_f < DFcrit.tau_trend.p5);
+
+fprintf(['(f) Trend-stationary DGP: DF with trend (τ_τ) reject@5%% = %.3f ', ...
+         '(power against unit root).\n'], rej_trend_DF5);
+
+% Save summary
+writetable(table(t_f, rho_f), fullfile(outdir,'1f_trendstationary_results.csv'));
 %% ===================== Exercise 2 =====================
 
 %%% Monte Carlo settings
@@ -241,7 +356,7 @@ end
 t_all{3}  = tstat; R2_all{3} = R2;
 
 % Double check: differencing fixes the spurious regression in Case 3
-rej_diff = nan;
+rej_diff = nan; %#ok<NASGU>
 do_diff_fix = true;
 if do_diff_fix
     tstatD = zeros(R,1);
@@ -280,37 +395,37 @@ Summary = table(caseNames.', mean_b1, sd_b1, rej_rate, mean_R2, mean_rhoU, mean_
 if do_diff_fix
     Summary.rej_diff_case3 = [NaN; NaN; rej_diff; NaN];
 end
-writetable(Summary, fullfile(outdir,'spurious_regression_summary.csv'));
+writetable(Summary, fullfile(outdir,'2_spurious_regression_summary.csv'));
 disp(Summary);
 
 %% ----------- Plots: t-statistics & R^2 distributions -----------
 % t-stat histograms
 for k = 1:K
-    fh = figure('Position', figPos, 'Renderer', 'painters'); grid on; hold on
+    fh = figure('Position', figPos); grid on; hold on
     histogram(t_all{k}, histBins, 'Normalization','pdf'); 
     xline(-tcrit, '--', '$-t_{0.975}$','LabelVerticalAlignment','bottom'); xline(tcrit, '--', '$t_{0.975}$','LabelVerticalAlignment','bottom');
     title(sprintf('t-stat of slope: %s (R=%d, T=%d)', caseNames(k), R, T));
     xlabel('$t(\hat{a}_1)$'); ylabel('Density');
     drawnow;
-    exportFig(fh, sprintf('tstat_hist_case%d.png', k));
+    exportFig(fh, sprintf('2_tstat_hist_case%d.pdf', k));
     close(fh);
 end
 
 % R^2 histograms
 for k = 1:K
-    fh = figure('Position', figPos, 'Renderer', 'painters'); grid on; hold on
+    fh = figure('Position', figPos); grid on; hold on
     histogram(R2_all{k}, histBins, 'Normalization','pdf'); 
     title(sprintf('$R^2$ distribution: %s (R=%d, T=%d)', caseNames(k), R, T));
     xlabel('$R^2$'); ylabel('Density');
     drawnow;
-    exportFig(fh, sprintf('R2_hist_case%d.png', k));
+    exportFig(fh, sprintf('2_R2_hist_case%d.pdf', k));
     close(fh);
 end
 
 % Quick illustration for one replication of Case 3 (time series + scatter)
 y = cumsum(randn(T,1)); z = cumsum(randn(T,1));
 [b, ~, ~, ~, u] = ols_with_const(y, z);
-fh = figure('Position',[100 100 880 380], 'Renderer', 'painters');
+fh = figure('Position',[100 100 880 380]);
 tiledlayout(1,2,'Padding','compact','TileSpacing','compact');
 nexttile; plot([y z]); grid on; legend('$y_t$','$z_t$','Location','best');
 title('Case 3 example: two independent random walks'); xlabel('t');
@@ -319,8 +434,232 @@ xline(mean(z),'--'); yline(mean(y),'--');
 title(sprintf('Scatter (\\beta_1=%.2f), residuals are I(1)', b(2)));
 xlabel('$z_t$'); ylabel('$y_t$');
 drawnow;
-exportFig(fh,'case3_example_scatter_timeseries.png');
+exportFig(fh,'2_case3_example_scatter_timeseries.pdf');
 close(fh);
+
+%% ===================== Exercise 3 =====================
+% Invertibility, VAR(4) with Cholesky, Monte Carlo IRFs vs True IRFs
+
+rng(20532,'twister');                         % reproducibility
+
+% --- Settings ---
+beta    = 0.6;
+SigU    = diag([1, 0.8]);                     % Var[eta]=1, Var[eps]=0.8
+T       = 500;                                 % sample size per simulation
+B       = 200;                                 % burn-in to wash out initial lags
+p       = 4;                                   % VAR order
+H       = 20;                                  % IRF horizons (0..H)
+Nmc     = 500;                                 % Monte Carlo replications (adjust if needed)
+
+% --- True IRFs to unit-variance structural shocks [eta, eps/sqrt(0.8)] ---
+% x_t = eta_t + L^2 eps_t
+% y_t = (beta/(1-beta)) eta_t + (beta^2/(1-beta) + beta L) eps_t
+% Let e2_t = eps_t / sqrt(0.8) so Var(e2)=1 -> responses to e2 have sqrt(0.8) scaling
+trueIRF = zeros(2,2,H+1);           % [resp var, shock, horizon]
+% Shock 1: eta_t (unit variance)
+trueIRF(1,1,1) = 1;                                 % x to eta at h=0
+trueIRF(2,1,1) = beta/(1-beta);                     % y to eta at h=0
+% Shock 2: e2_t = eps_t/sqrt(0.8) (unit variance)
+s = sqrt(0.8);
+trueIRF(1,2,3) = s;                                 % x to eps at h=2
+trueIRF(2,2,1) = (beta^2/(1-beta)) * s;             % y to eps at h=0
+trueIRF(2,2,2) = beta * s;                           % y to eps at h=1
+
+% --- Monte Carlo: estimate VAR(4), identify by Cholesky, store IRFs ---
+IRF_draws = zeros(2,2,H+1,Nmc);      % store structural IRFs (unit-variance shocks)
+
+for r = 1:Nmc
+    % simulate data from DGP
+    [X, Y] = simulate_dgp_invertibility(T+B, beta, SigU);
+    X = X(B+1:end,:);  % drop burn-in
+    % estimate VAR(p) with intercept
+    [Acomp, Pchol] = estimate_var_chol(X, p);
+    % IRFs (structural, unit-variance shocks): Theta_j = Phi_j * P
+    IRF_draws(:,:,:,r) = var_irf_from_companion(Acomp, Pchol, H);
+end
+
+% --- Summaries across Monte Carlo runs ---
+IRF_mean = mean(IRF_draws, 4);
+IRF_lo   = prctile(IRF_draws, 2.5, 4);
+IRF_hi   = prctile(IRF_draws,97.5, 4);
+
+% --- Save results ---
+save(fullfile(outdir,'ex3_invertibility_irfs.mat'), ...
+     'beta','SigU','T','B','p','H','Nmc','trueIRF','IRF_draws','IRF_mean','IRF_lo','IRF_hi');
+
+% --- Plots: True vs Estimated (mean + 95% band) ---
+h = 0:H;
+labelsVar   = {'$x_t$','$y_t$'};
+labelsShock = {'$\eta$ (unit var)','$\varepsilon/\sqrt{0.8}$ (unit var)'};
+
+% one figure per variable, 2 panels (shocks)
+for iv = 1:2
+    fh = figure('Position',[120 120 900 380]);
+    tlo = tiledlayout(1,2,'Padding','compact','TileSpacing','compact');
+    for js = 1:2
+        nexttile; hold on; grid on
+        % bands
+        fill([h, fliplr(h)], [squeeze(IRF_lo(iv,js,:))' fliplr(squeeze(IRF_hi(iv,js,:))')], ...
+             [0.8 0.85 1.0], 'EdgeColor','none', 'FaceAlpha',0.6);
+        % mean est
+        plot(h, squeeze(IRF_mean(iv,js,:)), '-', 'LineWidth',1.8);
+        % true
+        plot(h, squeeze(trueIRF(iv,js,:)), '--k', 'LineWidth',1.6);
+        xlabel('Horizon $h$'); ylabel('Response');
+        title(sprintf('%s to %s', labelsVar{iv}, labelsShock{js}));
+        legend('95\% band (MC)','MC mean','True','Location','best');
+    end
+    title(tlo, sprintf('Exercise 3: IRFs for %s (VAR(%d), N=%d, T=%d)', labelsVar{iv}, p, Nmc, T));
+    exportFig(fh, sprintf('3_irfs_%s_VAR%d_N%d_T%d.pdf', erase(labelsVar{iv}, {'$','_','^','{','}','\'}), p, Nmc, T));
+    close(fh);
+end
+
+% Combined 2x2 figure (x/y × eta/eps)
+fh = figure('Position',[100 100 940 720]);
+tlo = tiledlayout(2,2,'Padding','compact','TileSpacing','compact');
+for iv = 1:2
+    for js = 1:2
+        nexttile; hold on; grid on
+        fill([h, fliplr(h)], [squeeze(IRF_lo(iv,js,:))' fliplr(squeeze(IRF_hi(iv,js,:))')], ...
+             [0.8 0.85 1.0], 'EdgeColor','none', 'FaceAlpha',0.6);
+        plot(h, squeeze(IRF_mean(iv,js,:)), '-', 'LineWidth',1.8);
+        plot(h, squeeze(trueIRF(iv,js,:)), '--k', 'LineWidth',1.6);
+        xlabel('Horizon $h$'); ylabel('Response');
+        title(sprintf('%s to %s', labelsVar{iv}, labelsShock{js}));
+        if iv==1 && js==1
+            legend('95\% band (MC)','MC mean','True','Location','best');
+        end
+    end
+end
+title(tlo, sprintf('Exercise 3: IRFs (VAR(%d), N=%d, T=%d), Cholesky', p, Nmc, T));
+exportFig(fh, sprintf('3_irfs_all_VAR%d_N%d_T%d.pdf', p, Nmc, T));
+close(fh);
+
+%% ===================== Exercise 4 =====================
+% Romer & Romer (2004): VAR(4) and Granger-causality with R&R shocks
+
+% -------- Parameters --------
+p = 4;                                 % VAR lag order (assignment requires 4)
+romer_path = '/Users/stefanograziosi/Documents/GitHub/20532-macroeconometrics-ps/ps2/Data/Romer_Romer2004.csv';     % Adjust path if needed
+alpha = 0.05;                           % test size for printing
+
+Ttbl = readtable(romer_path, 'PreserveVariableNames', true);
+Ttbl.Properties.VariableNames = lower(Ttbl.Properties.VariableNames);      % Normalize variable names to lowercase for robust indexing
+
+% Expected columns in this order
+varOrder = {'inflation','unemployment','ffr','rr_shock'};
+assert(all(ismember(varOrder, Ttbl.Properties.VariableNames)), ...
+    'CSV must contain columns: %s', strjoin(varOrder, ', '));
+
+Yraw = double(Ttbl{:, varOrder});      % [Infl, Unemp, FFR, RR_Shock]
+
+% Drop any rows with NaNs
+ok = all(~isnan(Yraw), 2);
+Yraw = Yraw(ok, :);
+[Tobs, n] = size(Yraw);
+
+% -------- Build design matrix: [const | L1 all vars | L2 all vars | ...] --------
+% Use your mlag helper: it returns exactly [L1 all vars | L2 all vars | ...]
+Xlags = mlag(Yraw, p);                 % first p rows contain zeros by design
+X = [ones(Tobs,1) Xlags];
+Y = Yraw;
+
+% Trim first p rows to align lags
+Xt = X(p+1:end, :);
+Yt = Y(p+1:end, :);
+[T, K] = size(Xt);                     % T effective obs, K regressors
+
+df = T - K;                            % residual df per equation
+
+% -------- OLS by equation (equation-by-equation OLS is efficient for VAR) --------
+XX = Xt' * Xt;                          % K x K
+% Use backslash for both the estimator and (XX)^{-1}
+B = XX \ (Xt' * Yt);                   % K x n, column j are coeffs for eqn j
+U = Yt - Xt * B;                        % T x n residuals
+s2 = sum(U.^2, 1) ./ df;                % 1 x n residual variances (per equation)
+
+% Compute (X'X)^{-1} stably without explicit inv
+invXX = XX \ eye(K);                   % numerically safer than inv(XX)
+
+% -------- Helper to map lag-block positions --------
+% With our X layout, positions for variable v (1..n) across all p lags are:
+% posLag(v) = 1 + [0, n, 2n, ..., (p-1)n] + v
+posLag = @(v) 1 + ( (0:p-1)' * n + v );  % column vector of length p
+
+% Labels for pretty output
+labels = ["Inflation","Unemployment","FedFundsRate","RR_Shock"];
+shockIdx = 4;
+
+% -------- WALD tests --------
+rows = struct('Cause', [], 'Arrow', [], 'Effect', [], 'NumLags', [], ...
+              'NumRestrictions', [], 'Wald_chi2', [], 'p_chi2', [], ...
+              'Fstat', [], 'p_F', []);
+res = repmat(rows, 7, 1);   % 3 A-tests + 3 B-tests + 1 C-test = 7 rows
+rptr = 0;
+
+% (A) Do R&R shocks Granger-cause the others?  (Shock -> yEq for yEq=1..3)
+for yEq = 1:3
+    rptr = rptr + 1;
+    bj = B(:, yEq);
+    s2j = s2(yEq);
+    cols = posLag(shockIdx);
+    R = zeros(p, K);
+    for r = 1:p, R(r, cols(r)) = 1; end
+    [W, pchi2, Fstat, pF] = waldTest_ols(bj, s2j, invXX, R, df);
+    res(rptr) = packrow(labels(shockIdx), "→", labels(yEq), p, size(R,1), W, pchi2, Fstat, pF);
+end
+
+% (B) Do others Granger-cause the R&R shocks?  (xVar -> Shock) individually
+for xVar = 1:3
+    rptr = rptr + 1;
+    bj = B(:, shockIdx);
+    s2j = s2(shockIdx);
+    cols = posLag(xVar);
+    R = zeros(p, K);
+    for r = 1:p, R(r, cols(r)) = 1; end
+    [W, pchi2, Fstat, pF] = waldTest_ols(bj, s2j, invXX, R, df);
+    res(rptr) = packrow(labels(xVar), "→", labels(shockIdx), p, size(R,1), W, pchi2, Fstat, pF);
+end
+
+% (C) Others jointly -> Shock  (r = 3p)
+rptr = rptr + 1;
+bj = B(:, shockIdx);
+s2j = s2(shockIdx);
+R = zeros(3*p, K);
+row = 0;
+for xVar = 1:3
+    cols = posLag(xVar);
+    for r = 1:p
+        row = row + 1;
+        R(row, cols(r)) = 1;
+    end
+end
+[W, pchi2, Fstat, pF] = waldTest_ols(bj, s2j, invXX, R, df);
+res(rptr) = packrow("All{Infl,Unemp,FFR}", "→", labels(shockIdx), p, size(R,1), W, pchi2, Fstat, pF);
+
+% -------- Pretty print & save --------
+ResultsTbl = struct2table(res);
+
+fprintf('\n=== Exercise 4: Granger-causality (VAR(%d), levels, intercept only) ===\n', p);
+disp(ResultsTbl);
+
+% Save next to the data file
+outdir = fileparts(romer_path); if isempty(outdir), outdir = pwd; end
+outcsv = fullfile(outdir,'4_romer_granger_results.csv');
+writetable(ResultsTbl, outcsv);
+fprintf('\nSaved results to: %s\n', outcsv);
+
+% Quick console interpretation
+fprintf('\nAt alpha = %.2f, reject H0 (no Granger-causality) when p-values < %.2f.\n', alpha, alpha);
+for i = 1:height(ResultsTbl)
+    rej = ResultsTbl.p_F(i) < alpha;
+    tag = ternary(rej, 'REJECT', 'do not reject'); % your helper
+    fprintf('%-18s %s %-15s : p_F = %.4f  -> %s\n', ...
+        char(ResultsTbl.Cause(i)), char(ResultsTbl.Arrow(i)), char(ResultsTbl.Effect(i)), ResultsTbl.p_F(i), tag);
+end
+
+
+
 
 %% ------------------------ Functions used --------------------------
 function Y = simulate_ar1_loop(T, phi, sigma2, mu, Y0)
@@ -364,3 +703,101 @@ function [m_b, sd_b, rej, m_R2, m_rho, m_DW] = summarize_case(b1, tstat, R2, rho
     m_DW  = mean(DW);
 end
 
+% For Exercise 3
+
+function [XY, Y_only] = simulate_dgp_invertibility(T, beta, SigU)
+% Simulate from:
+% [x_t; y_t] = [1, L^2; beta/(1-beta), beta^2/(1-beta) + beta L] * [eta_t; eps_t]
+% with Var(eta)=SigU(1,1), Var(eps)=SigU(2,2), uncorrelated.
+    s_eta = sqrt(SigU(1,1));
+    s_eps = sqrt(SigU(2,2));
+    eta = s_eta * randn(T,1);
+    eps = s_eps * randn(T,1);
+    x = zeros(T,1);
+    y = zeros(T,1);
+    for t=1:T
+        % x_t = eta_t + eps_{t-2}
+        x(t) = eta(t);
+        if t-2 >= 1
+            x(t) = x(t) + eps(t-2);
+        end
+        % y_t = (beta/(1-beta)) eta_t + (beta^2/(1-beta)) eps_t + beta eps_{t-1}
+        y(t) = beta/(1-beta) * eta(t) + (beta^2/(1-beta)) * eps(t);
+        if t-1 >= 1
+            y(t) = y(t) + beta * eps(t-1);
+        end
+    end
+    XY = [x y];
+    if nargout>1, Y_only = y; end
+end
+
+function [Acomp, P] = estimate_var_chol(Y, p)
+% Estimate VAR(p) with intercept by OLS equation-by-equation.
+% Return companion matrix Acomp (size np x np) and Cholesky P of residual Σ_u (lower).
+    [T, n] = size(Y);
+    Xlag = mlag(Y, p);                 % T x (n*p)
+    X = [ones(T,1), Xlag];             % intercept
+    Ytrim = Y(p+1:end, :);
+    Xtrim = X(p+1:end, :);
+    B = (Xtrim' * Xtrim) \ (Xtrim' * Ytrim);   % (1+n*p) x n
+    U = Ytrim - Xtrim * B;                      % T-p x n residuals
+    SigmaU = (U' * U) / (size(U,1) - (1 + n*p));
+    % Companion
+    A = B(2:end,:).';                            % n x (n*p) (stacked [A1 ... Ap])
+    A1toP = A;
+    Acomp = zeros(n*p, n*p);
+    Acomp(1:n, :) = A1toP;
+    if p>1
+        Acomp(n+1:end, 1:n*(p-1)) = eye(n*(p-1));
+    end
+    % Cholesky (lower) for Σ_u
+    P = chol(SigmaU, 'lower');
+end
+
+function Xlags = mlag(X, p)
+% Create lag matrix [L1 .. Lp] for each column of X. Missing top rows left as zeros.
+    [T, n] = size(X);
+    Xlags = zeros(T, n*p);
+    for k=1:p
+        Xlags(k+1:end, (n*(k-1)+1):n*k) = X(1:end-k, :);
+    end
+end
+
+function TH = var_irf_from_companion(Acomp, P, H)
+% Structural IRFs Theta_h = Phi_h * P, where Phi_h from companion powers.
+    np = size(Acomp,1);
+    n  = size(P,1);
+    J  = [eye(n), zeros(n, np-n)];
+    TH = zeros(n,n,H+1);
+    Phi = eye(n);                 % Phi_0
+    TH(:,:,1) = Phi * P;
+    A_pow = eye(np);
+    for h = 1:H
+        A_pow = A_pow * Acomp;
+        Phi_h = J * A_pow * J';
+        TH(:,:,h+1) = Phi_h * P;
+    end
+end
+
+% For Exercise 4
+
+function o = ternary(cond, a, b), if cond, o = a; else, o = b; end, end
+
+function [W, pchi2, Fstat, pF] = waldTest_ols(bj, s2j, invXX, R, df)
+% Classic Wald test under homoskedastic OLS for a *single* equation j
+% H0: R * b_j = 0
+r = size(R,1);
+Rb = R * bj;
+Vb = s2j * (R * invXX * R');          % var of Rb under OLS homoskedasticity
+% Use a solve for numerical stability (no explicit inv)
+W = Rb' / Vb * Rb;                     % equivalent to (Rb' * inv(Vb) * Rb)
+Fstat = W / r;                         % F(r, df)
+pF = 1 - fcdf(Fstat, r, df);
+pchi2 = 1 - chi2cdf(W, r);
+end
+
+function row = packrow(cause, arrow, effect, p, nr, W, pchi2, F, pF)
+row = struct('Cause', string(cause), 'Arrow', string(arrow), 'Effect', string(effect), ...
+             'NumLags', p, 'NumRestrictions', nr, 'Wald_chi2', W, 'p_chi2', pchi2, ...
+             'Fstat', F, 'p_F', pF);
+end
