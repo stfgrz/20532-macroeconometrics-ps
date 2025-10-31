@@ -658,8 +658,181 @@ for i = 1:height(ResultsTbl)
         char(ResultsTbl.Cause(i)), char(ResultsTbl.Arrow(i)), char(ResultsTbl.Effect(i)), ResultsTbl.p_F(i), tag);
 end
 
+%% ========================= Exercise 5 =========================
+
+rng(20532,'twister');                       % reproducibility (safe to repeat)
+
+% ---- Settings ----
+T5       = 250;                             % sample length
+R5       = 5000;                            % Monte Carlo replications
+sigma2_5 = 0.6;                             % innovation variance
+alpha0_5 = 0.5;                             % intercept in the DGP (levels)
+beta1_5  = 0.05;                            % trend slope for part (b)
+
+% Critical values
+z975 = 1.95996398454005;                    % two-sided 5% Normal
+df_a = (T5-1) - 2;                          % (a) levels + intercept
+df_b = (T5-1) - 3;                          % (b) levels + intercept + trend
+if exist('tinv','file')
+    t975_a = tinv(0.975, df_a);
+    t975_b = tinv(0.975, df_b);
+else
+    t975_a = z975;                          % fallback to Normal if tinv unavailable
+    t975_b = z975;
+end
+
+%%% Question (a)
+% What happens to the distribution of the t-test in this case? How do you intuitively explain this? Do you notice anything interesting on the mean and on the shape of the distribution of the t-statistic?
+% DGP: y_t = alpha0_5 + y_{t-1} + eps_t
+% OLS: y_t = a + rho*y_{t-1} + e_t, test H0: rho = 1
+
+t_rho_a      = zeros(R5,1);     % t-stat for H0: rho=1
+rho_hat_a    = zeros(R5,1);
+alpha_hat_a  = zeros(R5,1);
+t_alpha_a    = zeros(R5,1);
+se_rho_a     = zeros(R5,1);
+
+for r = 1:R5
+    % --- simulate ---
+    eps = sqrt(sigma2_5) * randn(T5,1);
+    y   = zeros(T5,1);
+    for t = 2:T5
+        y(t) = alpha0_5 + y(t-1) + eps(t);
+    end
+
+    % --- OLS: y_t on [1, y_{t-1}] ---
+    yt   = y(2:end);
+    xlag = y(1:end-1);
+    X    = [ones(T5-1,1), xlag];
+    XX   = X' * X;
+    b    = XX \ (X' * yt);
+    u    = yt - X * b;
+    s2   = (u' * u) / df_a;
+    invXX= XX \ eye(2);
+    Vb   = s2 * invXX;
+    se   = sqrt(diag(Vb));
+
+    alpha_hat_a(r) = b(1);
+    rho_hat_a(r)   = b(2);
+    se_rho_a(r)    = se(2);
+    t_alpha_a(r)   = b(1) / se(1);
+    t_rho_a(r)     = (b(2) - 1) / se(2);
+end
+
+% Rejection rates (two-sided 5%)
+rejN_2s_a = mean(abs(t_rho_a) > z975);
+rejT_2s_a = mean(abs(t_rho_a) > t975_a);
+
+% Save raw and summary
+Results5a = table(rho_hat_a, se_rho_a, t_rho_a, alpha_hat_a, t_alpha_a, ...
+    'VariableNames', {'rho_hat','se_rho','t_rho_H0eq1','alpha_hat','t_alpha'});
+writetable(Results5a, fullfile(outdir,'5a_levels_intercept_raw.csv'));
+
+Summ5a = table( ...
+    mean(rho_hat_a), std(rho_hat_a), mean(t_rho_a), std(t_rho_a), ...
+    skewness(t_rho_a), kurtosis(t_rho_a), rejN_2s_a, rejT_2s_a, ...
+    'VariableNames', {'mean_rho','sd_rho','mean_t','sd_t','skew_t','kurt_t','rej_norm_5pct_2s','rej_t_5pct_2s'});
+writetable(Summ5a, fullfile(outdir,'5a_levels_intercept_summary.csv'));
+
+% Plots
+plot_t_hist_with_normal(t_rho_a, z975, ...
+    '(5a) $t$-stat for $H_0:\ \rho=1$ (levels, intercept only)', ...
+    exportFig, '5a_tstat_hist_levels_intercept.pdf');
+
+normal_qqplot_simple(t_rho_a, ...
+    '(5a) Normal QQ-plot of $t$-stat ($H_0:\ \rho=1$)', ...
+    exportFig, '5a_tstat_normal_qq.pdf');
 
 
+%%% Question (b)
+% Based on what we have learnt at point a., add a time trend (another deterministic regressor) to both the DGP and the estimating equation at point a. and check that also in this case the results of Sims, Stock and Watson hold [summarized in Rule 2 in Enders, p.267].
+% DGP: y_t = alpha0_5 + beta1_5*t + y_{t-1} + eps_t
+% OLS: y_t = a + b*t + rho*y_{t-1} + e_t, test H0: rho = 1
+
+t_rho_b    = zeros(R5,1);
+rho_hat_b  = zeros(R5,1);
+se_rho_b   = zeros(R5,1);
+a_hat_b    = zeros(R5,1);
+b_hat_b    = zeros(R5,1);
+t_a_b      = zeros(R5,1);
+t_b_b      = zeros(R5,1);
+
+tvec5 = (1:T5)';
+
+for r = 1:R5
+    % --- simulate with trend ---
+    eps = sqrt(sigma2_5) * randn(T5,1);
+    y   = zeros(T5,1);
+    for t = 2:T5
+        y(t) = alpha0_5 + beta1_5*t + y(t-1) + eps(t);
+    end
+
+    % --- OLS: y_t on [1, t, y_{t-1}] ---
+    yt   = y(2:end);
+    xlag = y(1:end-1);
+    tt   = tvec5(2:end);
+    X    = [ones(T5-1,1), tt, xlag];
+    XX   = X' * X;
+    b    = XX \ (X' * yt);
+    u    = yt - X * b;
+    s2   = (u' * u) / df_b;
+    invXX= XX \ eye(3);
+    Vb   = s2 * invXX;
+    se   = sqrt(diag(Vb));
+
+    a_hat_b(r)   = b(1);
+    b_hat_b(r)   = b(2);
+    rho_hat_b(r) = b(3);
+    se_rho_b(r)  = se(3);
+
+    t_a_b(r)     = b(1) / se(1);
+    t_b_b(r)     = b(2) / se(2);
+    t_rho_b(r)   = (b(3) - 1) / se(3);
+end
+
+% Rejection rates (two-sided 5%)
+rejN_2s_b = mean(abs(t_rho_b) > z975);
+rejT_2s_b = mean(abs(t_rho_b) > t975_b);
+
+% Save raw and summary
+Results5b = table(rho_hat_b, se_rho_b, t_rho_b, a_hat_b, t_a_b, b_hat_b, t_b_b, ...
+    'VariableNames', {'rho_hat','se_rho','t_rho_H0eq1','alpha_hat','t_alpha','beta_hat','t_beta'});
+writetable(Results5b, fullfile(outdir,'5b_levels_trend_raw.csv'));
+
+Summ5b = table( ...
+    mean(rho_hat_b), std(rho_hat_b), mean(t_rho_b), std(t_rho_b), ...
+    skewness(t_rho_b), kurtosis(t_rho_b), rejN_2s_b, rejT_2s_b, ...
+    'VariableNames', {'mean_rho','sd_rho','mean_t','sd_t','skew_t','kurt_t','rej_norm_5pct_2s','rej_t_5pct_2s'});
+writetable(Summ5b, fullfile(outdir,'5b_levels_trend_summary.csv'));
+
+% Plots
+plot_t_hist_with_normal(t_rho_b, z975, ...
+    '(5b) $t$-stat for $H_0:\ \rho=1$ (levels, intercept + trend)', ...
+    exportFig, '5b_tstat_hist_levels_trend.pdf');
+
+normal_qqplot_simple(t_rho_b, ...
+    '(5b) Normal QQ-plot of $t$-stat ($H_0:\ \rho=1$) with trend', ...
+    exportFig, '5b_tstat_normal_qq.pdf');
+
+%% ---------- Compact console summary & percentiles ----------
+fprintf('\n=== Exercise 5(a): Intercept only ===\n');
+fprintf('mean(t) = %.3f, sd(t) = %.3f, skew = %.3f, kurt = %.3f\n', ...
+    mean(t_rho_a), std(t_rho_a), skewness(t_rho_a), kurtosis(t_rho_a));
+fprintf('Rej@5%% (two-sided): Normal = %.3f, Student(df=%d) = %.3f\n', ...
+    rejN_2s_a, df_a, rejT_2s_a);
+
+fprintf('\n=== Exercise 5(b): Intercept + trend ===\n');
+fprintf('mean(t) = %.3f, sd(t) = %.3f, skew = %.3f, kurt = %.3f\n', ...
+    mean(t_rho_b), std(t_rho_b), skewness(t_rho_b), kurtosis(t_rho_b));
+fprintf('Rej@5%% (two-sided): Normal = %.3f, Student(df=%d) = %.3f\n', ...
+    rejN_2s_b, df_b, rejT_2s_b);
+
+pct_vec5 = [1 5 10 25 50 75 90 95 99]';
+PTa = prctile(t_rho_a, pct_vec5);
+PTb = prctile(t_rho_b, pct_vec5);
+writetable(table(pct_vec5, PTa, PTb, ...
+    'VariableNames',{'percentile','t_levels_intercept_only','t_levels_trend'}), ...
+    fullfile(outdir,'5_tstat_percentiles.csv'));
 
 %% ------------------------ Functions used --------------------------
 function Y = simulate_ar1_loop(T, phi, sigma2, mu, Y0)
@@ -800,4 +973,52 @@ function row = packrow(cause, arrow, effect, p, nr, W, pchi2, F, pF)
 row = struct('Cause', string(cause), 'Arrow', string(arrow), 'Effect', string(effect), ...
              'NumLags', p, 'NumRestrictions', nr, 'Wald_chi2', W, 'p_chi2', pchi2, ...
              'Fstat', F, 'p_F', pF);
+end
+
+% For Exercise 5
+
+function plot_t_hist_with_normal(tstats, zcrit, ttl, exportFig, outname)
+% Plot histogram of t-stats with N(0,1) overlay and ±zcrit lines, then save via exportFig
+    fh = figure('Position', [100 100 860 420]); hold on; grid on
+    histogram(tstats, 55, 'Normalization','pdf');
+    xx = linspace(min(tstats), max(tstats), 400);
+    nn = normal_pdf(xx);
+    plot(xx, nn, '-', 'LineWidth', 1.6);
+    xline(-zcrit, '--', '$-z_{0.975}$', 'LabelVerticalAlignment','bottom');
+    xline( zcrit, '--', '$z_{0.975}$',  'LabelVerticalAlignment','bottom');
+    title(ttl);
+    xlabel('$t = (\hat{\rho}-1)/\text{se}(\hat{\rho})$'); ylabel('Density');
+    legend('Empirical','Normal(0,1)','Location','best');
+    if nargin >= 5 && ~isempty(outname)
+        exportFig(fh, outname);
+        close(fh);
+    end
+end
+
+function normal_qqplot_simple(tstats, ttl, exportFig, outname)
+% Toolbox-free Normal QQ-plot using erfinv-based Normal quantiles
+    R = numel(tstats);
+    q = linspace(0.5/R, 1-0.5/R, 200)';       % interior quantiles for stability
+    emp = quantile(tstats, q);
+    the = normal_icdf(q);
+    fh = figure('Position', [100 100 860 420]); hold on; grid on
+    scatter(the, emp, 12, 'filled');
+    plot(the, the, 'k--', 'LineWidth', 1.2);
+    xlabel('Theoretical Normal quantiles'); ylabel('Empirical quantiles');
+    title(ttl);
+    if nargin >= 4 && ~isempty(outname)
+        exportFig(fh, outname);
+        close(fh);
+    end
+end
+
+function y = normal_pdf(x)
+% PDF of N(0,1) without Statistics Toolbox
+    y = (1./sqrt(2*pi)) .* exp(-0.5 .* (x.^2));
+end
+
+function x = normal_icdf(p)
+% Inverse CDF of N(0,1) using erfinv (base MATLAB)
+% Valid for p in (0,1); vectorized.
+    x = sqrt(2) .* erfinv(2.*p - 1);
 end
