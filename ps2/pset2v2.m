@@ -63,7 +63,7 @@ title('(a) Empirical distribution of OLS $\hat{\phi}$ under unit root ($T=250$)'
 exportFig(fh_a,'1a_phi_hat_hist.pdf');
 close(fh_a);
 
-fprintf('Q1(a) mean(\\hat{phi})=%.4f, sd=%.4f, med=%.4f\n', mean(phi_hat_a), std(phi_hat_a), median(phi_hat_a));
+fprintf('(a) mean(\\hat{phi})=%.4f, sd=%.4f, med=%.4f\n', mean(phi_hat_a), std(phi_hat_a), median(phi_hat_a));
 
 %%% Question (b):
 %   Repeat the exercise in (a) but now with a drift term equal to Construct a $t$-test for the null hypothesis $H_{0}:\ \rho=\varphi-1=0$, in a test regression: $\Delta y_{t}=\alpha+\rho y_{t-1}+\varepsilon_{t}$; against a one-sided alternative $H_{0}:\ \rho<0$.
@@ -157,11 +157,14 @@ chi2_stat = t_d.^2;
 rej_chi2  = mean(chi2_stat > chi2_95_df1);
 fprintf('(e) Wald χ² test (df=1) reject@95%% under H0 (RW+drift): %.3f\n', rej_chi2);
 
-% Visualize t and χ^2 stats
+% Visualize t and χ² stats
 fh_e1 = figure('Position', figPos);
 histogram(t_d, histBins, 'Normalization','pdf'); grid on; hold on
-xline(-sqrt(chi2_95_df1),'--','$\pm \sqrt{\chi^2_{0.95;1}}$','LabelVerticalAlignment','bottom');
-xline(+sqrt(chi2_95_df1),'--');
+xline(-sqrt(chi2_95_df1), '--', 'HandleVisibility','off');                          % Critical lines without LaTeX label on xline (avoids interpreter errors)
+xline(+sqrt(chi2_95_df1), '--', 'HandleVisibility','off');
+yl = ylim;                                                                          % Add LaTeX annotation as a separate text object
+text(0, yl(1) + 0.02*range(yl), '$\pm \sqrt{\chi^2_{0.95;1}}$', ...
+    'Interpreter','latex', 'HorizontalAlignment','center', 'VerticalAlignment','bottom');
 xlabel('$t(\hat{\rho})$'); ylabel('Density'); title('(e) DF $t$-stats under $H_0$ (RW+drift)')
 exportFig(fh_e1,'1e_t_hist_RWdrift.pdf'); close(fh_e1);
 
@@ -265,7 +268,12 @@ disp(Summary);
 for k = 1:K
     fh = figure('Position', figPos); grid on; hold on;
     histogram(t_all{k}, histBins, 'Normalization','pdf');
-    xline([-tcrit, tcrit], '--', {'$-t_{0.975}$', '$t_{0.975}$'},'LabelVerticalAlignment','bottom');
+    xline([-tcrit, tcrit], '--', 'HandleVisibility','off');
+    yl = ylim;
+    text(-tcrit, yl(1), '$-t_{0.975}$', ...
+        'Interpreter','latex', 'HorizontalAlignment','left', 'VerticalAlignment','bottom');
+    text( tcrit, yl(1), '$t_{0.975}$', ...
+        'Interpreter','latex', 'HorizontalAlignment','right','VerticalAlignment','bottom');
     title(sprintf('t-stat of slope: %s', caseNames(k)));
     exportFig(fh, sprintf('2_tstat_hist_case%d.pdf', k));
     close(fh);
@@ -645,8 +653,13 @@ function plot_t_hist_with_normal(tstats, zcrit, ttl, exportFig, outname)
     xx = linspace(xl(1), xl(2), 400);
     plot(xx, normpdf(xx, 0, 1), '-', 'LineWidth', 1.6, 'DisplayName', 'Normal(0,1)');
     
-    xline([-zcrit, zcrit], '--', {'$-z_{0.975}$', '$z_{0.975}$'}, ...
-        'LabelVerticalAlignment','bottom', 'HandleVisibility','off');
+    xline([-zcrit, zcrit], '--', 'HandleVisibility','off');
+
+    yl = ylim;
+    text(-zcrit, yl(1), '$-z_{0.975}$', ...
+        'Interpreter','latex', 'HorizontalAlignment','left', 'VerticalAlignment','bottom');
+    text( zcrit, yl(1), '$z_{0.975}$', ...
+        'Interpreter','latex', 'HorizontalAlignment','right', 'VerticalAlignment','bottom');
     
     title(ttl);
     xlabel('$t = (\hat{\rho}-1)/\mathrm{se}(\hat{\rho})$'); ylabel('Density');
