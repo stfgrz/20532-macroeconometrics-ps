@@ -222,7 +222,7 @@ rej_chi2  = mean(chi2_stat > chi2_95);
 
 fprintf('(e) Wald χ^2 test (df=1) reject@95%% under H0 (RW+drift): %.3f\n', rej_chi2);
 
-% (Optional) visualize t and χ^2 stats
+% Visualize t and χ^2 stats
 fh_e1 = figure('Position', figPos);
 histogram(t_d, histBins, 'Normalization','pdf'); grid on; hold on
 xline(-sqrt(chi2_95),'--','$\pm \sqrt{\chi^2_{0.95;1}}$','LabelVerticalAlignment','bottom');
@@ -322,6 +322,7 @@ t_all{1}  = tstat; R2_all{1} = R2;
 
 %% ---------- CASE 2: I(1) vs I(0) (meaningless) ----------
 % y_t is random walk; z_t stationary AR(1)
+
 phi_z = 0.6;
 for r = 1:R
     y = cumsum(randn(T,1));                 % I(1), variance 1
