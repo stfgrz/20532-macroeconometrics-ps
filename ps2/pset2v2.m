@@ -20,6 +20,7 @@ set(groot, 'defaultTextInterpreter', 'latex');
 set(groot, 'defaultLegendInterpreter', 'latex');
 set(groot, 'defaultAxesTickLabelInterpreter', 'latex');
 set(groot, 'defaultLineLineWidth', 1.5);
+set(groot, 'defaultAxesToolbarVisible', 'off');
 
 % Helper to export figures
 exportFig = @(fh, name) exportgraphics(fh, fullfile(outdir, name), 'ContentType','vector');
@@ -154,14 +155,14 @@ fprintf(['(d) OLS under RW+drift: mean(phi-hat)=%.4f, sd=%.4f.\n' ...
 
 chi2_stat = t_d.^2;
 rej_chi2  = mean(chi2_stat > chi2_95_df1);
-fprintf('(e) Wald χ^2 test (df=1) reject@95%% under H0 (RW+drift): %.3f\n', rej_chi2);
+fprintf('(e) Wald χ² test (df=1) reject@95%% under H0 (RW+drift): %.3f\n', rej_chi2);
 
 % Visualize t and χ^2 stats
 fh_e1 = figure('Position', figPos);
 histogram(t_d, histBins, 'Normalization','pdf'); grid on; hold on
 xline(-sqrt(chi2_95_df1),'--','$\pm \sqrt{\chi^2_{0.95;1}}$','LabelVerticalAlignment','bottom');
 xline(+sqrt(chi2_95_df1),'--');
-xlabel('$t(\hat{\rho})$'); ylabel('Density'); title('(e) DF t-stats under H_0 (RW+drift)')
+xlabel('$t(\hat{\rho})$'); ylabel('Density'); title('(e) DF $t$-stats under $H_0$ (RW+drift)')
 exportFig(fh_e1,'1e_t_hist_RWdrift.pdf'); close(fh_e1);
 
 %%% Question (f)
@@ -198,7 +199,7 @@ tcrit = tinv(0.975, nu);
 caseNames = ["Case 1: both stationary", ...
              "Case 2: I(1) vs I(0)", ...
              "Case 3: I(1) vs I(1) (spurious)", ...
-             "Case 4: I(1) & cointegrated"];
+             "Case 4: I(1) \& cointegrated"];
 K = numel(caseNames);
 
 % Result containers
@@ -318,7 +319,7 @@ alpha4 = 0.05;
 Ttbl = readtable(romer_path, 'PreserveVariableNames', true);
 Ttbl.Properties.VariableNames = lower(Ttbl.Properties.VariableNames);
 
-varOrder = {'inflation','unemployment','ffr','rr_shock'};
+varOrder = {'inflation','unemployment','ffr','rrshock'};
 Yraw = double(Ttbl{:, varOrder});
 Yraw = Yraw(all(~isnan(Yraw), 2), :);
 [Tobs, n] = size(Yraw);
@@ -339,17 +340,17 @@ s2 = sum(U.^2, 1) ./ df;
 invXX = (Xt' * Xt) \ eye(K);
 
 % --- Granger-Causality Tests ---
-labels = ["Inflation","Unemployment","FedFundsRate","RR_Shock"];
+labels = ["Inflation","Unemployment","FedFundsRate","rrshock"];
 shockIdx = 4;
 
 res = [];
 % (A) Shock -> Others
 for yEq = 1:3
-    res = [res; run_gc_test(B, s2, invXX, df, p4, K, shockIdx, yEq, labels)]; %#ok<AGROW>
+    res = [res; run_gc_test(B, s2, invXX, df, p4, K, shockIdx, yEq, labels)]; 
 end
 % (B) Others -> Shock (individually)
 for xVar = 1:3
-    res = [res; run_gc_test(B, s2, invXX, df, p4, K, xVar, shockIdx, labels)]; %#ok<AGROW>
+    res = [res; run_gc_test(B, s2, invXX, df, p4, K, xVar, shockIdx, labels)];
 end
 % (C) Others -> Shock (jointly)
 res = [res; run_gc_test(B, s2, invXX, df, p4, K, 1:3, shockIdx, labels)];
