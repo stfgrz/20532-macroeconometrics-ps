@@ -33,7 +33,7 @@ ols     = @(y,x) deal((x'*x)\(x'*y), y - x*((x'*x)\(x'*y)));                % ge
 
 % Global settings
 z_5_left = -1.6448536269;                               % 5% one-sided Normal critical (left tail)
-chi2_95  = 3.8414588207;                                % 95% critical for chi-square(1)
+% chi2_95 is defined later where it is used to avoid unused-variable warnings
 DF_tau_mu = struct('p1',-3.43,'p5',-2.86,'p10',-2.57);  % common tau_mu tabulated values
 
 %% ===================== Exercise 1 =====================
@@ -470,7 +470,7 @@ IRF_draws = zeros(2,2,H+1,Nmc);      % store structural IRFs (unit-variance shoc
 
 for r = 1:Nmc
     % simulate data from DGP
-    [X, Y] = simulate_dgp_invertibility(T+B, beta, SigU);
+    [X, ~] = simulate_dgp_invertibility(T+B, beta, SigU);
     X = X(B+1:end,:);  % drop burn-in
     % estimate VAR(p) with intercept
     [Acomp, Pchol] = estimate_var_chol(X, p);
