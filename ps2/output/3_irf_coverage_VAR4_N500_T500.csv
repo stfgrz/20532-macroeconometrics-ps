@@ -1,0 +1,5 @@
+Variable,Shock,FracInside95,CountInside,NumHorizons
+x,eta,0.904761904761905,19,21
+x,eps_unit,0.857142857142857,18,21
+y,eta,0.952380952380952,20,21
+y,eps_unit,0.904761904761905,19,21

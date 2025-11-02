@@ -102,7 +102,6 @@ close(fh_b);
 pct_vec = [1 5 10 25 50 75 90 95 99];
 emp_pct = prctile(t_b, pct_vec);
 
-% Print a compact comparison
 fprintf('(c) Empirical DF t percentiles (%%):\n');
 disp(table(pct_vec(:), emp_pct(:), 'VariableNames',{'percentile','empirical_t'}));
 fprintf('Tabulated DF (tau_mu) ~ T=250: 1%%=%.2f, 5%%=%.2f, 10%%=%.2f\n', ...
@@ -285,7 +284,7 @@ for k = 1:K
     close(fh);
 end
 
-%% ===================== Exercise 3 =====================
+%% Exercise 3 
 % Invertibility, VAR(4) with Cholesky, Monte Carlo IRFs vs True IRFs
 
 % --- Settings ---
@@ -314,10 +313,109 @@ IRF_mean = mean(IRF_draws, 4);
 IRF_lo   = prctile(IRF_draws, 2.5, 4);
 IRF_hi   = prctile(IRF_draws, 97.5, 4);
 
-plot_irfs_ex3(trueIRF, IRF_mean, IRF_lo, IRF_hi, p3, Nmc3, T3, exportFig);
+% --- Inline plots for Exercise 3 (no helper function) ---
+h = 0:size(trueIRF,3)-1;
+labelsVar   = {'$x_t$','$y_t$'};
+labelsShock = {'$\eta$ (unit var)','$\varepsilon/\sqrt{0.8}$ (unit var)'};
 
-%% ===================== Exercise 4 =====================
-% Romer & Romer (2004): VAR(4) and Granger-causality
+% All responses in a 2x2 grid
+fh_all = figure('Position',[100 100 940 720]);
+tlo = tiledlayout(2,2,'Padding','compact','TileSpacing','compact');
+for iv = 1:2
+    for js = 1:2
+        nexttile; hold on; grid on
+        lo = squeeze(IRF_lo(iv,js,:))';
+        hi = squeeze(IRF_hi(iv,js,:))';
+        mu = squeeze(IRF_mean(iv,js,:))';
+        tru= squeeze(trueIRF(iv,js,:))';
+        fill([h, fliplr(h)], [lo fliplr(hi)], [0.8 0.85 1.0], ...
+             'EdgeColor','none', 'FaceAlpha',0.6);
+        plot(h, mu, '-', 'LineWidth',1.8);
+        plot(h, tru, '--k', 'LineWidth',1.6);
+        xlabel('Horizon $h$'); ylabel('Response');
+        title(sprintf('%s to %s', labelsVar{iv}, labelsShock{js}));
+        if iv==1 && js==1
+            legend('95\% band (MC)','MC mean','True','Location','best');
+        end
+    end
+end
+title(tlo, sprintf('Exercise 3: IRFs (VAR(%d), N=%d, T=%d), Cholesky', p3, Nmc3, T3));
+exportFig(fh_all, sprintf('3_irfs_all_VAR%d_N%d_T%d_inline.pdf', p3, Nmc3, T3));
+close(fh_all);
+
+% Responses of x_t to both shocks (two separate subplots) 
+% These are not directly used in the Overleaf document, but I inserted them just in case we needed separate plots.
+iv = 1; % x_t
+fh_x = figure('Position',[100 100 940 360]);
+tlo_x = tiledlayout(1,2,'Padding','compact','TileSpacing','compact');
+for js = 1:2
+    nexttile; hold on; grid on
+    lo = squeeze(IRF_lo(iv,js,:))';
+    hi = squeeze(IRF_hi(iv,js,:))';
+    mu = squeeze(IRF_mean(iv,js,:))';
+    tru= squeeze(trueIRF(iv,js,:))';
+    fill([h, fliplr(h)], [lo fliplr(hi)], [0.8 0.85 1.0], ...
+         'EdgeColor','none', 'FaceAlpha',0.6);
+    plot(h, mu, '-', 'LineWidth',1.8);
+    plot(h, tru, '--k', 'LineWidth',1.6);
+    xlabel('Horizon $h$'); ylabel('Response');
+    title(sprintf('$x_t$ to %s', labelsShock{js}));
+    if js==1
+        legend('95\% band (MC)','MC mean','True','Location','best');
+    end
+end
+title(tlo_x, sprintf('Exercise 3: Responses of $x_t$ (VAR(%d), N=%d, T=%d)', p3, Nmc3, T3));
+exportFig(fh_x, sprintf('3_irfs_x_by_shock_VAR%d_N%d_T%d.pdf', p3, Nmc3, T3));
+close(fh_x);
+
+% Responses of y_t to both shocks (two separate subplots)
+% These are not directly used in the Overleaf document, but I inserted them just in case we needed separate plots.
+iv = 2; % y_t
+fh_y = figure('Position',[100 100 940 360]);
+tlo_y = tiledlayout(1,2,'Padding','compact','TileSpacing','compact');
+for js = 1:2
+    nexttile; hold on; grid on
+    lo = squeeze(IRF_lo(iv,js,:))';
+    hi = squeeze(IRF_hi(iv,js,:))';
+    mu = squeeze(IRF_mean(iv,js,:))';
+    tru= squeeze(trueIRF(iv,js,:))';
+    fill([h, fliplr(h)], [lo fliplr(hi)], [0.8 0.85 1.0], ...
+         'EdgeColor','none', 'FaceAlpha',0.6);
+    plot(h, mu, '-', 'LineWidth',1.8);
+    plot(h, tru, '--k', 'LineWidth',1.6);
+    xlabel('Horizon $h$'); ylabel('Response');
+    title(sprintf('$y_t$ to %s', labelsShock{js}));
+    if js==1
+        legend('95\% band (MC)','MC mean','True','Location','best');
+    end
+end
+title(tlo_y, sprintf('Exercise 3: Responses of $y_t$ (VAR(%d), N=%d, T=%d)', p3, Nmc3, T3));
+exportFig(fh_y, sprintf('3_irfs_y_by_shock_VAR%d_N%d_T%d.pdf', p3, Nmc3, T3));
+close(fh_y);
+
+% Additional numerical reporting
+
+% (i) Numerically report the roots of det C(z)
+[rootsC, coefC] = detC_roots(beta3);
+fprintf('\n=== det C(z) polynomial (z^2, z, const) ===\n');
+fprintf('coef = [%.6f, %.6f, %.6f]\n', coefC(1), coefC(2), coefC(3));
+fprintf('roots(det C) = [% .6f, % .6f]\n', rootsC(1), rootsC(2));
+
+% Save roots to CSV
+rootsTbl = table(beta3, coefC(1), coefC(2), coefC(3), rootsC(1), rootsC(2), ...
+    'VariableNames', {'beta','coef_z2','coef_z1','coef_z0','root1','root2'});
+writetable(rootsTbl, fullfile(outdir, sprintf('3_detC_roots_beta%.2f.csv', beta3)));
+
+% (ii) Coverage table: fraction of horizons where true IRF lies in MC 95%% band
+coverageTbl = irf_coverage_table(trueIRF, IRF_lo, IRF_hi);
+disp(coverageTbl);
+writetable(coverageTbl, fullfile(outdir, ...
+    sprintf('3_irf_coverage_VAR%d_N%d_T%d.csv', p3, Nmc3, T3)));
+
+% (iii) “Estimated minus true” overlay for the ε shock → x
+plot_eps_to_x_diff(trueIRF, IRF_draws, IRF_mean, p3, Nmc3, T3, exportFig);
+
+%% Exercise 4
 
 % --- Parameters & Data Loading ---
 p4 = 4;
@@ -368,11 +466,9 @@ ResultsTbl = struct2table(res);
 fprintf('\n=== Exercise 4: Granger-causality (VAR(%d)) ===\n', p4);
 disp(ResultsTbl);
 
-outdir_ex4 = fileparts(romer_path);
 writetable(ResultsTbl, fullfile(outdir,'4_romer_granger_results.csv'));
 
-
-%% ========================= Exercise 5 =========================
+%% Exercise 5
 
 % ---- Settings ----
 T5       = 250;
@@ -582,29 +678,78 @@ function trueIRF = compute_true_irfs_ex3(beta, SigU, H)
     trueIRF(2,2,2) = beta * s_eps; % Response at h=1
 end
 
-function plot_irfs_ex3(trueIRF, meanIRF, loIRF, hiIRF, p, Nmc, T, exportFig)
-% Plotting function for Exercise 3 results
-    h = 0:size(trueIRF,3)-1;
-    labelsVar   = {'$x_t$','$y_t$'};
-    labelsShock = {'$\eta$ (unit var)','$\varepsilon/\sqrt{0.8}$ (unit var)'};
-    fh = figure('Position',[100 100 940 720]);
-    tlo = tiledlayout(2,2,'Padding','compact','TileSpacing','compact');
-    for iv = 1:2
-        for js = 1:2
-            nexttile; hold on; grid on
-            fill([h, fliplr(h)], [squeeze(loIRF(iv,js,:))' fliplr(squeeze(hiIRF(iv,js,:))')], ...
-                 [0.8 0.85 1.0], 'EdgeColor','none', 'FaceAlpha',0.6);
-            plot(h, squeeze(meanIRF(iv,js,:)), '-', 'LineWidth',1.8);
-            plot(h, squeeze(trueIRF(iv,js,:)), '--k', 'LineWidth',1.6);
-            xlabel('Horizon $h$'); ylabel('Response');
-            title(sprintf('%s to %s', labelsVar{iv}, labelsShock{js}));
-            if iv==1 && js==1, legend('95\% band (MC)','MC mean','True','Location','best'); end
+function [rts, coef] = detC_roots(beta)
+% Returns roots of det C(z) and the polynomial coefficients.
+% det C(z) = (beta^2/(1-beta)) + beta*z - (beta/(1-beta))*z^2
+% poly coefficients in descending powers: [z^2, z, const]
+    coef = [-(beta/(1-beta)), beta, beta^2/(1-beta)];
+    rts  = roots(coef);  % expected ~ [1 ; -beta]
+end
+
+function coverageTbl = irf_coverage_table(trueIRF, loIRF, hiIRF)
+% Compute fraction of horizons where true IRF is inside [lo, hi] band
+% for each (variable, shock) pair.
+    [nvar, nshock, H1] = size(trueIRF);
+    H = H1 - 1;
+    VarNames   = {'x','y'};
+    ShockNames = {'eta','eps_unit'}; % eps normalized to unit variance
+
+    rows = [];
+    for i = 1:nvar
+        for j = 1:nshock
+            tr  = squeeze(trueIRF(i,j,:));
+            lo  = squeeze(loIRF(i,j,:));
+            hi  = squeeze(hiIRF(i,j,:));
+            inside = (tr >= lo) & (tr <= hi);
+            fracInside = mean(inside);
+            countInside = sum(inside);
+            rows = [rows; {VarNames{i}, ShockNames{j}, fracInside, countInside, H1}]; %#ok<AGROW>
         end
     end
-    title(tlo, sprintf('Exercise 3: IRFs (VAR(%d), N=%d, T=%d), Cholesky', p, Nmc, T));
-    exportFig(fh, sprintf('3_irfs_all_VAR%d_N%d_T%d.pdf', p, Nmc, T));
+    coverageTbl = cell2table(rows, ...
+        'VariableNames', {'Variable','Shock','FracInside95','CountInside','NumHorizons'});
+end
+
+function plot_eps_to_x_diff(trueIRF, IRF_draws, IRF_mean, p, Nmc, T, exportFig)
+% Plot mean vs true for x<-eps (top) and the difference with 95% band (bottom).
+    H1 = size(trueIRF,3);
+    h  = 0:H1-1;
+
+    % Select x (row 1), shock = epsilon (col 2)
+    tr   = squeeze(trueIRF(1,2,:));             % (H+1) x 1
+    estm = squeeze(IRF_mean(1,2,:));            % (H+1) x 1
+    draws = squeeze(IRF_draws(1,2,:,:));        % (H+1) x N
+    diffs = draws - tr;                         % implicit expansion
+
+    diff_mean = mean(diffs, 2);
+    diff_lo   = prctile(diffs, 2.5, 2);
+    diff_hi   = prctile(diffs, 97.5, 2);
+
+    fh = figure('Position',[100 100 820 620]);
+    tlo = tiledlayout(2,1,'Padding','compact','TileSpacing','compact');
+
+    % Top: IRF level — estimated mean vs true
+    nexttile; hold on; grid on
+    plot(h, estm, '-', 'LineWidth', 1.8, 'DisplayName','MC mean (estimated)');
+    plot(h, tr,  '--k', 'LineWidth', 1.6, 'DisplayName','True');
+    title('$x_t$ response to $\varepsilon/\sqrt{0.8}$ (level)');
+    xlabel('Horizon $h$'); ylabel('Response');
+    legend('Location','best');
+
+    % Bottom: Difference with 95% band
+    nexttile; hold on; grid on
+    fill([h, fliplr(h)], [diff_lo' fliplr(diff_hi')], ...
+         [0.85 0.9 1.0], 'EdgeColor','none', 'FaceAlpha',0.7, 'DisplayName','95% band (diff)');
+    plot(h, diff_mean, '-', 'LineWidth', 1.8, 'DisplayName','Mean(diff)');
+    yline(0, '--k', 'HandleVisibility','off');
+    title('Estimated $-$ True for $x\leftarrow \varepsilon/\sqrt{0.8}$');
+    xlabel('Horizon $h$'); ylabel('Difference');
+
+    title(tlo, sprintf('Exercise 3: ε-shock to x — VAR(%d), N=%d, T=%d', p, Nmc, T));
+    exportFig(fh, sprintf('3_irf_eps_to_x_diff_VAR%d_N%d_T%d.pdf', p, Nmc, T));
     close(fh);
 end
+
 
 % Exercise 4 Helpers
 function row = run_gc_test(B, s2, invXX, df, p, K, cause_vars, effect_var, labels)
