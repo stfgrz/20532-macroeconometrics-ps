@@ -1,0 +1,1014 @@
+\documentclass[dvipsnames,11pt]{article}
+
+\input{SimpleStef}
+
+\setlength{\headheight}{25pt} % Non so perché ma senza questo da un piccolo errore
+
+\pagestyle{fancy}
+\fancyhf{} 
+\fancyhead[L]{\textsc{\small{20532\\ Macroeconometrics}}} 
+\fancyhead[R]{\textsc{\small Stefano Graziosi}} 
+\fancyhead[C]{\textbf{Problem set 2}}
+\fancyfoot[R]{\thepage} 
+\fancyfoot[L]{\small \today} 
+\renewcommand{\headrulewidth}{0.4pt} 
+\renewcommand{\footrulewidth}{0pt}
+
+\begin{document}
+
+\begin{center}
+    \Large{\textbf{Introduction}}
+\end{center}
+
+    \noindent The problem set was completed using a single \texttt{MATLAB} script that relies on helper functions defined at the end of the file. For brevity, these helper functions are not reproduced in this PDF.
+
+    \noindent This submission includes all exercises from the original PDF distributed in mid-October. Please disregard parts (d)–(f) of Question \ref{sec:urt} and the entirety of Question 5 (which is not compiled directly, but it is still available in the source of this file). Although these portions fall outside the assessed scope, the corresponding code is included for completeness; the accompanying comments are therefore less detailed than elsewhere.
+
+\section{Unit root testing} \label{sec:urt}
+
+    \begin{enumerate}[label=\alph*.]
+
+        \item Compute the empirical distribution of the OLS estimator in the case of an AR(1) with $\varphi = 1$ and $T=250$ (you are free to choose the variance of the innovation).
+
+            \begin{solution}
+
+                Before proceding with the solution, we set up the settings for the Monte Carlo simulations that we are going to employ in all the necessary subsequent steps.
+
+\begin{lstlisting}[language=Matlab]
+% Monte Carlo settings
+T        = 250;              % Sample length
+R        = 5000;             % Monte Carlo replications
+sigma2   = 0.6;              % Variance of innovations
+\end{lstlisting}
+
+                Consider the AR(1) model $y_t=\varphi y_{t-1}+\varepsilon_t$ with $\varphi=1$ and $T=250$. Estimating $\varphi$ by OLS in the level regression $y_t=\varphi y_{t-1}+u_t$ yields a nonstandard sampling distribution when the true process is difference–stationary (DS). In particular, $\widehat\varphi\overset{p}{\to} 1$ but at rate $T$ (not $\sqrt{T}$), and $T(\widehat\varphi-1)$ converges to a functional of Brownian motion; standard normal inference is invalid. 
+                
+                In finite samples, $\widehat\varphi$ shows small downward bias (mean below one), consistent with our simulation $\text{mean}(\widehat\varphi)=0.9926$ and median $0.9966$. This matches the classic Dickey–Fuller insight that the usual $t$/$F$ rules fail under a unit root. 
+                
+                % \emph{See Enders for background and why standard $t$/$F$ are inapplicable under $H_0{:}\ \varphi=1$.}
+
+\begin{lstlisting}[language=Matlab]
+phi_hat_a = zeros(R,1);
+for r = 1:R
+    y = simulate_ar1(T, 1, sigma2, 0, 0); % Pure random walk (phi=1)
+    stats = run_ols(y(2:end), y(1:end-1), false); % No constant
+    phi_hat_a(r) = stats.b;
+end
+\end{lstlisting}
+
+\begin{lstlisting}[language=Matlab]
+% Plot histogram
+figPos = [100 100 840 420];
+histBins = 50;
+fh_a = figure('Position', figPos);
+histogram(phi_hat_a, histBins, 'Normalization','pdf'); grid on; hold on;
+xline(1,'--','True $\phi=1$','LabelVerticalAlignment','bottom');
+xlabel('$\hat{\phi}$'); ylabel('Density');
+title('(a) Empirical distribution of OLS $\hat{\phi}$ under unit root ($T=250$)');
+exportFig(fh_a,'1a_phi_hat_hist.pdf');
+close(fh_a);
+\end{lstlisting}
+
+                \begin{figure}[H]
+                    \centering
+                    \includegraphics[width=0.75\linewidth]{output/1a_phi_hat_hist.pdf}
+                    \caption{Empirical distribution of OLS \(\hat{\phi}\) under unit root (\(T=250\))}
+                    \label{fig:1a_empirical_distrib_hat_phi_ols}
+                \end{figure}
+
+\begin{lstlisting}[language=Matlab]
+fprintf('(a) mean(\\hat{phi})=%.4f, sd=%.4f, med=%.4f\n', mean(phi_hat_a), std(phi_hat_a), median(phi_hat_a));
+\end{lstlisting}
+
+                \begin{table}[htbp]
+                \centering
+                \caption{Summary statistics for $\hat{\phi}$}
+                \label{tab:phi-summary}
+                    \begin{threeparttable}
+                        \begin{tabular}{@{}l S[table-format=1.4]@{}}
+                        \toprule
+                        {Statistic} & {Value} \\
+                        \midrule
+                        Mean & 0.9926 \\
+                        Std.\ dev. & 0.0131 \\
+                        Median & 0.9966 \\
+                        \bottomrule
+                        \end{tabular}
+                    \end{threeparttable}
+                \end{table}
+        
+            \end{solution}  
+
+        \item Construct a $t$-test for the null hypothesis $H_{0}:\ \rho=\varphi-1=0$, in a test regression: $\Delta y_{t}=\alpha+\rho y_{t-1}+\varepsilon_{t}$; against a one-sided alternative $H_{0}:\ \rho<0$.
+            
+            Using a standard Normal distribution, how often do you reject the null hypothesis at the $95\%$ confidence level? 
+            Is the actual distribution of the t-test symmetric? Discuss.
+
+            \begin{solution}
+
+\begin{lstlisting}[language=Matlab]
+t_b   = zeros(R,1);
+rho_b = zeros(R,1);
+
+for r = 1:R
+    y = simulate_ar1(T, 1, sigma2, 0, 0); % Pure random walk
+    dy = diff(y);
+    ylag = y(1:end-1);
+    stats = run_ols(dy, ylag, true); % Regression with constant
+    rho_b(r) = stats.b(2);
+    t_b(r)   = stats.tstat(2);
+end
+
+rej_norm_left = mean(t_b < z_5_left);
+sk_b = skewness(t_b);
+fprintf(['(b) Using Normal 5%% one-sided (z=%.3f): reject rate = %.3f. ', ...
+         'Skewness of t-stat = %.3f (non-symmetric).\n'], z_5_left, rej_norm_left, sk_b);
+\end{lstlisting}
+
+                Under $H_0$ with an intercept in the test regression, the test statistic for $\rho$ has the \emph{Dickey–Fuller $\tau_\mu$} distribution (nonstandard), not $N(0,1)$. Hence a $5\%$ left–tail normal critical value ($-1.645$) is inappropriate and greatly over-rejects. In our Monte Carlo the normal-based rejection is $46.5\%$, while the left-tail of the simulated $t$ is visibly heavier and left-shifted.
+
+                \begin{table}[htbp]
+                    \centering
+                    \caption{Normal 5\% one-sided test summary}
+                    \label{tab:normal-onesided-summary}
+                    \begin{threeparttable}
+                        \begin{tabular}{@{}l S[table-format=1.3]@{}}
+                            \toprule
+                            {Statistic} & {Value} \\
+                            \midrule
+                            Rejection rate at 5\% (Normal; $z=-1.645$) & 0.465 \\
+                            Skewness of $t$-statistic & 0.220 \\
+                            \bottomrule
+                        \end{tabular}
+                        \begin{tablenotes}[flushleft]
+                        \footnotesize
+                        \item[] Skewness indicates a non-symmetric distribution.
+                        \end{tablenotes}
+                    \end{threeparttable}
+                \end{table}                
+
+                \begin{figure}[H]
+                    \centering
+                    \includegraphics[width=0.75\linewidth]{output/1b_t_hist.pdf}
+                    \caption{DF \(t\)-statistic under unit root, intercept included}
+                    \label{fig:1b_t_stat_unit_root}
+                \end{figure}
+                
+                As Figure \ref{fig:1b_t_stat_unit_root} shows, the empirical $t$ distribution is asymmetric and right–skewed (skewness $0.22$ here comes from mass in the left tail relative to a symmetric normal; the DF distribution itself is non-normal).
+
+
+\begin{lstlisting}[language=Matlab]
+fh_b = figure('Position', figPos);
+histogram(t_b, histBins, 'Normalization','pdf'); grid on; hold on;
+xline(z_5_left, '--', 'Normal 5% one-sided crit','LabelVerticalAlignment','bottom');
+xlabel('$t(\hat{\rho})$'); ylabel('Density');
+title('(b) DF $t$-stat under unit root, intercept included');
+exportFig(fh_b,'1b_t_hist.pdf');
+close(fh_b);
+\end{lstlisting}
+        
+            \end{solution}  
+
+        \item Compute now few percentiles of the empirical distribution of the $t$-test you generated at point b. and check that they are close to those tabulated by Dickey and Fuller.
+
+            \begin{solution}
+                
+\begin{lstlisting}[language=Matlab]
+
+fprintf('(c) Empirical DF t percentiles (%%):\n');
+disp(table(pct_vec(:), emp_pct(:), 'VariableNames',{'percentile','empirical_t'}));
+fprintf('Tabulated DF (tau_mu) ~ T=250: 1%%=%.2f, 5%%=%.2f, 10%%=%.2f\n', ...
+        DFcrit.tau_mu.p1, DFcrit.tau_mu.p5, DFcrit.tau_mu.p10);
+\end{lstlisting}
+
+                Using the $\tau_\mu$ setup (intercept only), our simulated percentiles at the 1\%, 5\% and 10\% points are $-3.378$, $-2.831$, and $-2.563$, very close to the tabulated DF values $\{-3.46,-2.88,-2.57\}$. 
+                
+                Small discrepancies are expected from Monte Carlo error and the finite $T=250$. This agreement validates the use of DF (not normal) critical values under $H_0$. Enders also reports these nonstandard $\tau$ criticals and explains their dependence on deterministic terms.
+
+\begin{lstlisting}[language=Matlab]
+left_tail   = [1 5 10];
+emp_left    = prctile(t_b, left_tail);
+DF_left     = [DFcrit.tau_mu.p1; DFcrit.tau_mu.p5; DFcrit.tau_mu.p10];
+delta_left  = emp_left(:) - DF_left;
+comp_tbl = table(left_tail(:), emp_left(:), DF_left, delta_left, ...
+    'VariableNames', {'percentile','empirical_t','DF_tau_mu','emp_minus_tab'});
+disp('Comparison to DF \tau\_\mu at 1/5/10% (empirical - table):');
+disp(comp_tbl);
+\end{lstlisting}
+
+                \begin{table}[htbp]
+                \centering
+                \caption{Empirical Dickey--Fuller $t$ percentiles at $T{=}250$}
+                \label{tab:df-percentiles}
+                    \begin{threeparttable}
+                        \begin{tabular}{@{}S[table-format=2.0] S[table-format=-1.5]@{}}
+                        \toprule
+                        {Percentile (\%)} & {$t$ (empirical)} \\
+                        \midrule
+                        1 & -3.3776 \\
+                        5 & -2.8309 \\
+                        10 & -2.5626 \\
+                        25 & -2.0807 \\
+                        50 & -1.5794 \\
+                        75 & -1.0115 \\
+                        90 & -0.45692 \\
+                        95 & -0.10345 \\
+                        99 & 0.59932 \\
+                        \bottomrule
+                        \end{tabular}
+                    \begin{tablenotes}[flushleft]
+                    \footnotesize
+                    \item[] Tabulated DF ($\tau_{\mu}$) at $T{=}250$: 1\% $=-3.46$, 5\% $=-2.88$, 10\% $=-2.57$.
+                    \end{tablenotes}
+                    \end{threeparttable}
+                \end{table}                
+
+\begin{lstlisting}[language=Matlab]
+rej_DF5 = mean(t_b < DFcrit.tau_mu.p5);
+fprintf('Using DF \\tau_\\mu 5%% critical (%.2f): empirical rejection = %.3f\n', ...
+        DFcrit.tau_mu.p5, rej_DF5);
+
+writetable(comp_tbl, fullfile(outdir,'1c_empirical_vs_DF_tau_mu.csv'));
+\end{lstlisting}
+
+                \begin{table}[htbp]
+                \centering
+                \caption{Empirical $t$ vs. Dickey--Fuller $\tau_{\mu}$ (tabulated) at selected percentiles}
+                \label{tab:df-empirical}
+                    \begin{threeparttable}
+                        \begin{tabular}{@{}S[table-format=2.0] S[table-format=-1.2] S[table-format=1.4]@{}}
+                        \toprule
+                        {Percentile (\%)} & {DF $\tau_{\mu}$ (tab.)} & {$t_{\text{emp}} - t_{\text{tab}}$} \\
+                        \midrule
+                        1 & -3.46 & 0.0824 \\
+                        5 & -2.88 & 0.0491 \\
+                        10 & -2.57 & 0.0074 \\
+                        \bottomrule
+                        \end{tabular}
+                    \end{threeparttable}
+                \end{table}                
+                
+                Using DF $\tau_{\mu}$ 5\% critical ($-2.88$): empirical rejection $= 0.045$.
+        
+            \end{solution}  
+
+\newpage        
+        \item Compute the empirical distribution of the OLS in the case of a random walk with drift and $T = 250$ and study the performance of the Dickey--Fuller test.
+
+            \begin{solution}
+
+\begin{lstlisting}[language=Matlab]
+a0_drift = 0.5;
+phi_hat_d = zeros(R,1);
+t_d = zeros(R,1);
+for r = 1:R
+    y = simulate_ar1(T, 1, sigma2, a0_drift, 0); % Random walk with drift
+    
+    % OLS of y_t on [1, y_{t-1}]
+    stats_level = run_ols(y(2:end), y(1:end-1), true);
+    phi_hat_d(r) = stats_level.b(2);
+
+    % Dickey-Fuller regression
+    dy = diff(y);
+    stats_df = run_ols(dy, y(1:end-1), true);
+    t_d(r) = stats_df.tstat(2);
+end
+\end{lstlisting}
+
+                For the DGP $y_t=y_{t-1}+a_0+\varepsilon_t$ (RW+drift), the correct DF specification again includes an intercept (the $\tau_\mu$ case). Under $H_0{:}\ \rho=0$, the DF $t$ has the same nonstandard $\tau_\mu$ distribution. 
+                
+                Using normal critical values still mis-sizes the test (our normal rejection $7.1\%$), whereas DF 5\% criticals aim to deliver size $\approx5\%$ asymptotically (our run under-rejected at $0.4\%$, which reflects finite-sample and simulation variability).
+
+                \begin{table}[htbp]
+                \centering
+                \caption{OLS under RW+drift: distribution of $\hat{\phi}$}
+                \label{tab:ols-rwdrift-dist}
+                    \begin{threeparttable}
+                        \begin{tabular}{@{}l S[table-format=1.4]@{}}
+                        \toprule
+                        {Statistic} & {Value} \\
+                        \midrule
+                        Mean of $\hat{\phi}$ & 0.999 \\
+                        Std.\ dev. of $\hat{\phi}$ & 0.0014 \\
+                        \bottomrule
+                        \end{tabular}
+                    \end{threeparttable}
+                \end{table}   
+
+\begin{lstlisting}[language=Matlab]
+rej_norm_d = mean(t_d < z_5_left);
+rej_DF5_d  = mean(t_d < DFcrit.tau_mu.p5);
+fprintf(['(d) OLS under RW+drift: mean(phi-hat)=%.4f, sd=%.4f.\n' ...
+         '    DF (one-sided) reject@5%% using Normal: %.3f; using DF \tau_{\mu}: %.3f\n'], ...
+        mean(phi_hat_d), std(phi_hat_d), rej_norm_d, rej_DF5_d);
+\end{lstlisting} 
+
+                \begin{table}[htbp]
+                \centering
+                \caption{OLS under RW+drift: one-sided 5\% rejections}
+                \label{tab:ols-rwdrift}
+                    \begin{threeparttable}
+                        \begin{tabular}{@{}l S[table-format=1.3]@{}}
+                        \toprule
+                        {Method} & {Reject @ 5\%} \\
+                        \midrule
+                        Using Normal & 0.071 \\
+                        Using DF $\tau_{\mu}$ & 0.004 \\
+                        \bottomrule
+                        \end{tabular}
+                    \end{threeparttable}
+                \end{table}
+                
+            \end{solution}
+
+\newpage
+        \item Construct an F-test for the null hypothesis $H_{0}$: there is unit root, against the alternative $H_{1}$: there is no unit root using a $\chi^{2}$ distribution (how many degrees of freedom?). How often do you reject $H_{0}$ at 95\% confidence?
+
+            \begin{solution}
+
+\begin{lstlisting}[language=Matlab]
+chi2_stat = t_d.^2;
+rej_chi2  = mean(chi2_stat > chi2_95_df1);
+fprintf('(e) Wald \(\Chi^2\) test (df=1) reject@95%% under H0 (RW+drift): %.3f\n', rej_chi2);
+\end{lstlisting} 
+
+                \begin{table}[htbp]
+                \centering
+                \caption{Wald $\chi^{2}$ test under $H_{0}$ (RW+drift)}
+                \label{tab:wald-chi2}
+                    \begin{threeparttable}
+                        \begin{tabular}{@{}l S[table-format=1.3]@{}}
+                        \toprule
+                        {Outcome} & {Empirical rate} \\
+                        \midrule
+                        Reject at 95\% & 0.057 \\
+                        \bottomrule
+                        \end{tabular}
+                    \begin{tablenotes}[flushleft]
+                    \footnotesize
+                    \item[] Nominal level: $\alpha = 0.05$; \(\qquad \qquad\) null: RW+drift.
+                    \end{tablenotes}
+                    \end{threeparttable}
+                \end{table}
+
+                Squaring the (DF) $t$ for the single restriction $\rho=0$ yields a Wald statistic with 1 degree of freedom if one incorrectly appeals to standard $\chi^2$ theory. Our simulation gives a $5.7\%$ rejection using $\chi^2_{1,0.95}$, close to nominal here by happenstance. The correct joint tests in the DF framework are the $\phi$-statistics (e.g., $\phi_1,\phi_2,\phi_3$), which also have nonstandard critical values that depend on included deterministics; e.g., with drift, $\phi_2$ jointly tests $(\alpha,\rho)=(0,0)$ and is compared to DF tables, not standard $F/\chi^2$.
+
+\begin{lstlisting}[language=Matlab]
+fh_e1 = figure('Position', figPos);
+histogram(t_d, histBins, 'Normalization','pdf'); grid on; hold on
+xline(-sqrt(chi2_95_df1), '--', 'HandleVisibility','off');
+xline(+sqrt(chi2_95_df1), '--', 'HandleVisibility','off');
+yl = ylim;
+text(0, yl(1) + 0.02*range(yl), '$\pm \sqrt{\chi^2_{0.95;1}}$', ...
+    'Interpreter','latex', 'HorizontalAlignment','center', 'VerticalAlignment','bottom');
+xlabel('$t(\hat{\rho})$'); ylabel('Density'); title('(e) DF $t$-stats under $H_0$ (RW+drift)')
+exportFig(fh_e1,'1e_t_hist_RWdrift.pdf'); close(fh_e1)
+\end{lstlisting} 
+
+                \begin{figure}[H]
+                    \centering
+                    \includegraphics[width=0.75\linewidth]{output/1e_t_hist_RWdrift.pdf}
+                    \caption{DF \(t\)-statistic under \(H_0\): random walk plus drift}
+                    \label{fig:1e_t_hist_RWdrift}
+                \end{figure}
+                
+            \end{solution}
+
+        \item Generate now data from a deterministic time trend and perform a DF test using the correct distribution for the test with null hypothesis $H_{0}$: there is unit root. How often do you reject the null?
+
+            \begin{solution}
+
+\begin{lstlisting}[language=Matlab]
+beta0 = 0.0;
+beta1 = 0.05;
+tvec   = (1:T)';
+t_f = zeros(R,1);
+for r = 1:R
+    eps = sqrt(sigma2)*randn(T,1);
+    y   = beta0 + beta1*tvec + eps; % Trend-stationary process
+    dy  = diff(y);
+    ylag= y(1:end-1);
+    t2  = tvec(2:end);
+    Xtr = [t2, ylag]; % Regressors for DF test with trend
+    stats = run_ols(dy, Xtr, true); % run_ols adds constant
+    t_f(r)  = stats.tstat(3); % t-stat for y_lag
+end
+\end{lstlisting}
+
+                For a deterministic linear trend $y_t=\beta_0+\beta_1 t+\varepsilon_t$ (TS), the appropriate DF regression includes a constant and a time trend; the $t$-statistic has the $\tau_\tau$ distribution. Because the null is a unit root while the DGP is stationary around a deterministic trend, the DF test has high power---hence our simulated rejection rate of $1.000$ at the 5\% level using $\tau_\tau$ criticals. 
+                
+                Enders emphasizes that the deterministics in the DF regression must mirror the DGP; omitting the trend when one is present can drive power toward zero, while including unnecessary deterministics also reduces power.
+
+\begin{lstlisting}[language=Matlab]
+rej_trend_DF5 = mean(t_f < DFcrit.tau_trend.p5);
+fprintf('(f) Trend-stationary DGP: DF with trend (\tau_{\tau}) reject@5%% = %.3f (power against unit root).\n', rej_trend_DF5);
+\end{lstlisting}    
+
+            \begin{table}[H]
+              \centering
+              \caption{DF with trend (\(\tau_\tau\)): power at 5\% under trend-stationary DGP}
+              \label{tab:df-trend-power}
+            
+              \begin{threeparttable}
+                \begin{tabular}{@{}l r@{}}
+                  \toprule
+                  \multicolumn{2}{@{}l}{\textbf{Trend-stationary DGP}} \\
+                  \midrule
+                  DF with trend (\(\tau_\tau\)) reject @ 5\% & 1.000 \\
+                  \bottomrule
+                \end{tabular}
+            
+                \begin{tablenotes}[flushleft]
+                  \footnotesize
+                  \item[] \textit{Interpretation:} Empirical power against unit root at \(\alpha = 0.05\),
+                  i.e., \(\Pr(\text{reject } H_{0} : \text{unit root} \mid \text{trend-stationary})\).
+                \end{tablenotes}
+              \end{threeparttable}
+            \end{table}
+                
+            \end{solution}
+
+    \end{enumerate}
+
+%========================================================
+\newpage
+\section{Spurious regression}
+
+    Design a Monte Carlo to show that the regression coefficient, the $t$-test and the $R^{2}$ are meaningless in the case of a spurious regression.
+    
+    In particular, show what happens in each of the 4 cases discussed in Enders, Edition 3 or 4, pp.\ 195--199. \\
+
+        \begin{solution}
+
+            We begin by setting up the necessary environments, namely (i) the Monte Carlo settings, including a burn-in of 500 for safety, (ii) the case setup, i.e. the names that we are going to employ for the recursions later on, and (iii) the containers which we will use to store the generated entries.
+
+\begin{lstlisting}[language=Matlab]
+% Monte Carlo settings
+T2   = 250;
+R2   = 2000;
+B2   = 500; % Burn-in
+nu  = T2 - 2;
+tcrit = tinv(0.975, nu);
+\end{lstlisting}
+
+            Consider the cross–regression
+            \begin{equation}
+                y_t = \alpha + \beta z_t + e_t,\qquad t=1,\dots,T,
+            \end{equation}
+            estimated by OLS. Enders discusses four cases for the orders of integration of $\{y_t\}$ and $\{z_t\}$ and what they imply for the usefulness of the OLS coefficient, the associated $t$–test, and $R^2$.
+            
+        \end{solution}
+
+    \subsection{Case-by-case discussion}
+
+    \begin{enumerate}[label= \textbf{Case \arabic*:}]
+        \item Both series are stationary.
+
+            \begin{solution}
+
+                If $y_t$ and $z_t$ are covariance–stationary (e.g., ARMA with $|\phi|<1$), the usual Gauss–Markov and CLT arguments apply: $\hat\beta$ is consistent and asymptotically normal, $t$–statistics are approximately standard normal under $H_0:\beta=0$, and $R^2$ reflects true fit rather than common trending. This is precisely the case where the ``classical regression model is appropriate'' (\href{https://www.wiley.com/en-us/Applied+Econometric+Time+Series%2C+4th+Edition-p-9781118808566}{Enders}, p.\ 199).
+
+                With independent stationary AR(1) processes ($T=250$), the $t$–statistic histogram is bell–shaped around zero and critical lines at $\pm t_{0.975}$ cut the tails as expected; the $R^2$ histogram piles up near zero. In our runs we obtained $\text{rej}_{5\%}\approx 0.02$, mean $R^2\approx 0.003$ (small sample under–rejection is not unusual). See the plots and their mass near zero.
+
+\begin{lstlisting}[language=Matlab]
+% y_t = 0.5 y_{t-1} + e^y_t,  z_t = -0.3 z_{t-1} + e^z_t  (independent)
+
+[b1, t, r2, dw] = deal(zeros(R2,1));
+for r = 1:R2
+    y = simulate_ar1(T2+B2, 0.5, 1.0, 0, 0);
+    z = simulate_ar1(T2+B2, -0.3, 1.0, 0, 0);
+    stats = run_ols(y(B2+1:end), z(B2+1:end), true);
+    b1(r) = stats.b(2); t(r) = stats.tstat(2); r2(r) = stats.R2; dw(r) = stats.DW;
+end
+results{1} = summarize_case(b1, t, r2, dw, tcrit);
+t_all{1} = t; R2_all{1} = r2;
+\end{lstlisting}
+
+                \begin{figure}[H]
+                    \centering
+                        \begin{subfigure}[b]{0.49\textwidth}
+                            \centering
+                            \includegraphics[width=\textwidth]{output/2_R2_hist_case1.pdf}
+                            \caption{Distribution of the \(R^2\) values for Case 1}
+                            \label{fig:2_R2_hist_case1}
+                        \end{subfigure}
+                      \hfill
+                        \begin{subfigure}[b]{0.49\textwidth}
+                            \centering
+                            \includegraphics[width=\textwidth]{output/2_tstat_hist_case1.pdf}
+                            \caption{Distribution of the $t$-statistic values for Case 1}
+                            \label{fig:2_tstat_hist_case1}
+                        \end{subfigure}
+                    \caption{Visual diagnostics for Case 1}
+                    \label{fig:ex2_case1}
+                \end{figure}
+        
+            \end{solution}  
+
+        \item The $\{y_t\}$ and $\{z_t\}$ sequences are integrated of different orders.
+
+            \begin{solution}
+
+                If one variable is $I(1)$ and the other is $I(0)$, the residual remains nonstationary. To see this, suppose $y_t$ is a random walk and $z_t$ is stationary. Then the regression residual can be written (as reported above verbatim from Enders' book) as
+                \begin{equation}
+                    e_t=\sum_{i=1}^t \varepsilon_{y,i} \;-\; \beta \sum_i z_{t-i},
+                \end{equation}
+                where the (convergent) sum over $z$ cannot offset the stochastic trend in $y_t$.
+                
+                Hence $e_t$ contains a stochastic trend, the variance of $e_t$ diverges, and the assumptions behind OLS $t$– and $F$–tests fail; $R^2$ and $t$–tests are unreliable.
+                
+                We find an inflated rejection rate ($\approx 0.33$ at nominal $5\%$) and a heavily dispersed $t$–statistic, as observable in Figure \ref{fig:2_tstat_hist_case2}. The $R^2$ distribution in \ref{fig:2_R2_hist_case2} is still mostly small but notably larger than in Case~1, reflecting the stochastic trend contaminating the residuals.
+
+
+\begin{lstlisting}[language=Matlab]
+for r = 1:R2
+    y = simulate_ar1(T2, 1, 1.0, 0, 0);
+    z = simulate_ar1(T2+B2, 0.6, 1.0, 0, 0);
+    stats = run_ols(y, z(B2+1:end), true);
+    b1(r) = stats.b(2); t(r) = stats.tstat(2); r2(r) = stats.R2; dw(r) = stats.DW;
+end
+results{2} = summarize_case(b1, t, r2, dw, tcrit);
+t_all{2} = t; R2_all{2} = r2;
+\end{lstlisting}
+
+                \begin{figure}[H]
+                    \centering
+                        \begin{subfigure}[b]{0.49\textwidth}
+                            \centering
+                            \includegraphics[width=\textwidth]{output/2_R2_hist_case2.pdf}
+                            \caption{Distribution of the \(R^2\) values for Case 2}
+                            \label{fig:2_R2_hist_case2}
+                        \end{subfigure}
+                      \hfill
+                        \begin{subfigure}[b]{0.49\textwidth}
+                            \centering
+                            \includegraphics[width=\textwidth]{output/2_tstat_hist_case2.pdf}
+                            \caption{Distribution of the $t$-statistic values for Case 2}
+                            \label{fig:2_tstat_hist_case2}
+                        \end{subfigure}
+                    \caption{Visual diagnostics for Case 2}
+                    \label{fig:ex2_case2}
+                \end{figure}
+        
+            \end{solution}  
+
+        \item The nonstationary $\{y_t\}$ and $\{z_t\}$ sequences are integrated of the same order, and the residual sequence contains a stochastic trend.
+
+            \begin{solution}
+
+                Let $y_t$ and $z_t$ be independent random walks:
+                \begin{equation}
+                    y_t = y_{t-1}+\varepsilon_{y,t},\qquad z_t=z_{t-1}+\varepsilon_{z,t}.
+                \end{equation}
+                Enders (pp.\ 196--199) shows the residual is
+                \begin{equation}
+                    e_t=\sum_{i=1}^{t}\varepsilon_{y,i}-\beta\sum_{i=1}^{t}\varepsilon_{z,i},
+                \end{equation}
+                so $\operatorname{var}(e_t)\to\infty$ and $\operatorname{Corr}(e_t,e_{t+1})\to 1$. Thus all deviations are permanent, violating the conditions for classical inference; $t$– and $F$–tests are severely size–distorted and $R^2$ is often large even when $\beta=0$. Empirically, Granger–Newbold rejection rates at the 5\% level are around $75\%$ and regressions exhibit large $R^2$ and strong residual autocorrelation; \href{https://doi.org/10.1016/0304-4076(86)90001-1}{Phillips (1986)} \cite{PHILLIPS1986311} shows the size distortion worsens with $T$.
+
+                We obtain $\text{rej}_{5\%}\approx 0.85$, a very dispersed $t$–statistic \ref{fig:2_tstat_hist_case3} centered near zero but with extremely heavy tails, and an $R^2$ distribution \ref{fig:2_R2_hist_case3} pushed far to the right (mean $\approx 0.24$, with mass well above $0.5$). The histograms make the point vividly.
+
+\begin{lstlisting}[language=Matlab]
+for r = 1:R2
+    y = simulate_ar1(T2, 1, 1.0, 0, 0);
+    z = simulate_ar1(T2, 1, 1.0, 0, 0);
+    stats = run_ols(y, z, true);
+    b1(r) = stats.b(2); t(r) = stats.tstat(2); r2(r) = stats.R2; dw(r) = stats.DW;
+end
+results{3} = summarize_case(b1, t, r2, dw, tcrit);
+t_all{3} = t; R2_all{3} = r2;
+\end{lstlisting}
+
+                \begin{figure}[H]
+                    \centering
+                        \begin{subfigure}[b]{0.49\textwidth}
+                            \centering
+                            \includegraphics[width=\textwidth]{output/2_R2_hist_case3.pdf}
+                            \caption{Distribution of the \(R^2\) values for Case 3}
+                            \label{fig:2_R2_hist_case3}
+                        \end{subfigure}
+                      \hfill
+                        \begin{subfigure}[b]{0.49\textwidth}
+                            \centering
+                            \includegraphics[width=\textwidth]{output/2_tstat_hist_case3.pdf}
+                            \caption{Distribution of the $t$-statistic values for Case 3}
+                            \label{fig:2_tstat_hist_case3}
+                        \end{subfigure}
+                    \caption{Visual diagnostics for Case 3}
+                    \label{fig:ex2_case3}
+                \end{figure}
+        
+            \end{solution}  
+
+\newpage
+        \item
+
+            The nonstationary $\{y_t\}$ and $\{z_t\}$ sequences are integrated of the same order and the residual sequence is stationary.
+
+            \begin{solution}
+
+                Now suppose $y_t$ and $z_t$ share a common stochastic trend, e.g.
+                \begin{equation}
+                    y_t=\tau_t+\varepsilon_{y,t},\qquad z_t=\tau_t+\varepsilon_{z,t},\qquad \tau_t=\tau_{t-1}+v_t,
+                \end{equation}
+                so that $y_t-z_t$ is stationary and the residual $e_t$ from the levels regression is $I(0)$. In this case the regression is meaningful: OLS yields a consistent estimate of the cointegrating vector, and in fact it is \emph{super–consistent} (converges faster than $T^{1/2}$). However, the usual $t$–ratios on the cointegrating coefficients are not standard; formal inference on cointegration is conducted by testing the residuals for a unit root (\href{https://doi.org/10.2307/1913236}{Engle–Granger} \cite{159cfabf-992c-3ff4-ae38-0f188b5aa4ad} Step 2) or by system approaches (\href{https://doi.org/10.1093/0198774508.001.0001}{Johansen, 1995}).
+
+                As clearly visible in Figure \ref{fig:2_R2_hist_case4}, the $R^2$ distribution concentrates near one and the slope estimate centers tightly around the true value ($\approx 0.98$). Because of super–consistency, the $t$–statistics that we observe in \ref{fig:2_tstat_hist_case4} on the slope explode in magnitude with $T$ (our histogram ranges well into the hundreds), illustrating why standard critical values are inappropriate for cointegrating coefficients.
+
+\begin{lstlisting}[language=Matlab]
+sig2_tau = 1.0; sig2_y = 0.5; sig2_z = 0.5;
+for r = 1:R2
+    tau = cumsum(sqrt(sig2_tau) * randn(T2,1));
+    y   = tau + sqrt(sig2_y) * randn(T2,1);
+    z   = tau + sqrt(sig2_z) * randn(T2,1);
+    stats = run_ols(y, z, true);
+    b1(r) = stats.b(2); t(r) = stats.tstat(2); r2(r) = stats.R2; dw(r) = stats.DW;
+end
+results{4} = summarize_case(b1, t, r2, dw, tcrit);
+t_all{4} = t; R2_all{4} = r2;
+\end{lstlisting}
+
+                \begin{figure}[H]
+                    \centering
+                        \begin{subfigure}[b]{0.49\textwidth}
+                            \centering
+                            \includegraphics[width=\textwidth]{output/2_R2_hist_case4.pdf}
+                            \caption{Distribution of the \(R^2\) values for Case 4}
+                            \label{fig:2_R2_hist_case4}
+                        \end{subfigure}
+                      \hfill
+                        \begin{subfigure}[b]{0.49\textwidth}
+                            \centering
+                            \includegraphics[width=\textwidth]{output/2_tstat_hist_case4.pdf}
+                            \caption{Distribution of the t-statistic values for Case 4}
+                            \label{fig:2_tstat_hist_case4}
+                        \end{subfigure}
+                    \caption{Visual diagnostics for Case 4}
+                    \label{fig:ex2_case4}
+                \end{figure}
+        
+            \end{solution}  
+            
+    \end{enumerate}
+
+\newpage
+    \subsection{General considerations}
+    
+        \begin{itemize}
+            \item \textbf{Case 1 (stationary)}: $\hat\beta$, $t$–tests, $R^2$ are meaningful under the usual assumptions; our simulation shows near–normal $t$ and tiny $R^2$.
+          
+            \item \textbf{Case 2 ($I(1)$ on $I(0)$)}: residuals inherit a stochastic trend; classical tests mis–size (inflated rejection).
+            
+            \item \textbf{Case 3 (spurious)}: nonstationary residuals ($\operatorname{var}(e_t)\to\infty$, $\rho_{e,e_{t+1}}\to 1$) $\Rightarrow$ huge over–rejection and often large $R^2$.
+          
+            \item \textbf{Case 4 (cointegration)}: the levels regression \emph{is} meaningful because $e_t$ is $I(0)$ and $\hat\beta$ is super–consistent; inference about cointegration relies on unit–root tests on $\hat e_t$ (or Johansen), not on textbook $t$–ratios.
+        \end{itemize}
+
+        \begin{table}[H]
+        \centering
+        \begin{threeparttable}
+        \caption{Monte Carlo Results for $\hat{\beta}_1$ and Regression Diagnostics}
+        \label{tab:mc-ols-integration}
+        \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}} l
+            S[table-format=1.4]     % mean beta1 (4 d.p.)
+            S[table-format=1.4]     % sd beta1 (4 d.p.)
+            S[table-format=1.3,round-precision=3] % rejection rate (3 d.p.)
+            S[table-format=1.3,round-precision=3] % mean R^2 (3 d.p.)
+            S[table-format=1.3,round-precision=3] % mean DW (3 d.p.)
+        }
+        \toprule
+        {Case} &
+        {\(\operatorname{mean}(\hat{\beta}_1)\)} &
+        {\(\operatorname{sd}(\hat{\beta}_1)\)} &
+        {Rej.\ \(H_0\) (5\%)} &
+        {\(\overline{R^2}\)} &
+        {\(\overline{\mathrm{DW}}\)} \\
+        \midrule
+        Case 1: both stationary                & -0.000163464511322008 & 0.0599732517378324 & 0.0195 & 0.00296630778631091 & 1.01592989337482 \\
+        Case 2: I(1) vs I(0)                   &  0.00611711824613545  & 0.644302630524836  & 0.334  & 0.0152500247802739  & 0.0564928739865226 \\
+        Case 3: I(1) vs I(1) (spurious)        &  0.00118601814880822  & 0.637901282010938  & 0.8485 & 0.242588581279895   & 0.0704326213257806 \\
+        Case 4: I(1) \& cointegrated           &  0.98019954336207     & 0.0194384306154298 & 1      & 0.960204883380288   & 1.98852646349412 \\
+        \bottomrule
+        \end{tabular*}
+        \begin{tablenotes}[flushleft]
+        \footnotesize
+        \item Notes: Columns report the Monte Carlo mean and standard deviation (sd) of $\hat{\beta}_1$, the empirical rejection frequency of $H_0\!:\beta_1=0$ at the 5\% level, the mean $R^2$, and the mean Durbin--Watson statistic (DW).
+        \end{tablenotes}
+        \end{threeparttable}
+        \end{table}
+        
+
+%========================================================
+
+\newpage
+\section{Invertibility}
+
+    Suppose that the DGP is
+    \begin{equation}
+        \begin{bmatrix}
+        x_t\\[2pt] y_t
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        1 & L^{2}\\[6pt]
+        \dfrac{\beta}{1-\beta} & \dfrac{\beta^{2}}{1-\beta} + \beta L
+        \end{bmatrix}
+        \begin{bmatrix}
+        \eta_t\\[2pt] \varepsilon_t
+        \end{bmatrix},
+        \tag{Starter DGP}
+    \end{equation}
+    where the shocks are uncorrelated, $u_t=[\eta_t\ \varepsilon_t]'$, and
+    $\text{VCov}(u_t)=
+    \begin{bmatrix}
+    1 & 0\\
+    0 & 0.8
+    \end{bmatrix}$; and $0<\beta<1$ (assume $\beta=0.6$). \\
+
+    Generate $500$ observations from $[x_t\ y_t]'$, estimate a VAR with 4 lags and identify the structural shocks using a Choleski identification scheme (after all, it is compatible with the DGP, right?). Do the simulations $N$ times and store the impulse responses for the $N$ simulations. 
+    Compare the true impulse response functions and the estimated ones (for the estimated ones, you can compute the mean of the empirical distribution of the estimated impulse responses and, say, 2.5th and the 97.5th percentile). Are they similar? What's wrong with the DGP? Discuss. \\
+
+        \begin{solution}
+
+            Let $u_t=(\eta_t,\varepsilon_t)'$ with $\operatorname{Var}(\eta_t)=1$, $\operatorname{Var}(\varepsilon_t)=0.8$, and $\operatorname{Cov}(\eta_t,\varepsilon_t)=0$. The data-generating process is
+            \begin{equation}
+                \begin{bmatrix} x_t \\ y_t \end{bmatrix}
+                =
+                \underbrace{\begin{bmatrix}
+                1 & L^2\\[6pt]
+                \dfrac{\beta}{1-\beta} & \dfrac{\beta^2}{1-\beta} + \beta L
+                \end{bmatrix}}_{=:~C(L)}
+                \begin{bmatrix} \eta_t \\ \varepsilon_t \end{bmatrix},\qquad 0<\beta<1~(\beta=0.6~\text{in simulations}).
+            \end{equation}
+            Thus $x_t=\eta_t+\varepsilon_{t-2}$ and $y_t=\frac{\beta}{1-\beta}\eta_t+\frac{\beta^2}{1-\beta}\varepsilon_t+\beta \varepsilon_{t-1}$.
+
+\begin{lstlisting}[language=Matlab]
+% --- Settings ---
+beta3    = 0.6;
+SigU3    = diag([1, 0.8]);
+T3       = 500;
+B3       = 200;
+p3       = 4;
+H3       = 20;
+Nmc3     = 500;
+
+% --- True IRFs ---
+trueIRF = compute_true_irfs_ex3(beta3, SigU3, H3);
+\end{lstlisting}
+            
+    \subsection{True (structural) impulse responses}
+    
+            We normalize shocks to unit variance via $\tilde{\varepsilon}_{1t}=\eta_t$ and $\tilde{\varepsilon}_{2t}=\varepsilon_t/\sigma_\varepsilon$ with $\sigma_\varepsilon=\sqrt{0.8}$. The structural IRFs $\Theta_h$ (responses at horizon $h$ to a unit shock at $t$) are
+            \begin{equation}\label{eq:ex3_irf}
+                \Theta_h
+                =
+                \begin{bmatrix}
+                \theta^{x,\eta}_h & \theta^{x,\varepsilon}_h\\
+                \theta^{y,\eta}_h & \theta^{y,\varepsilon}_h
+                \end{bmatrix}
+                =
+                \begin{bmatrix}
+                \mathbf{1}\{h=0\} & \mathbf{1}\{h=2\}\,\sigma_\varepsilon\\[4pt]
+                \frac{\beta}{1-\beta}\,\mathbf{1}\{h=0\} & \left(\frac{\beta^2}{1-\beta}\,\mathbf{1}\{h=0\}+\beta\,\mathbf{1}\{h=1\}\right)\sigma_\varepsilon
+                \end{bmatrix}.
+            \end{equation}
+            Hence: (i) $x$ reacts to $\eta$ only on impact; (ii) $x$ reacts to $\varepsilon$ only at $h=2$; (iii) $y$ reacts to $\varepsilon$ at $h=0$ and $h=1$; (iv) $y$ reacts to $\eta$ only on impact.
+
+\begin{lstlisting}[language=Matlab]
+function trueIRF = compute_true_irfs_ex3(beta, SigU, H)
+% Compute the true analytical IRFs for Exercise 3
+    trueIRF = zeros(2,2,H+1);
+    s_eps = sqrt(SigU(2,2));
+    % Shock 1: eta_t (unit variance)
+    trueIRF(1,1,1) = 1;
+    trueIRF(2,1,1) = beta/(1-beta);
+    % Shock 2: eps_t/s_eps (unit variance)
+    trueIRF(1,2,3) = s_eps; % Response at h=2
+    trueIRF(2,2,1) = (beta^2/(1-beta)) * s_eps; % Response at h=0
+    trueIRF(2,2,2) = beta * s_eps; % Response at h=1
+end
+
+function [XY, Y_only] = simulate_dgp_invertibility(T, beta, SigU)
+% Simulate from the DGP in Exercise 3
+    s_eta = sqrt(SigU(1,1)); s_eps = sqrt(SigU(2,2));
+    eta = s_eta * randn(T,1); eps = s_eps * randn(T,1);
+    x = eta + [0; 0; eps(1:end-2)];
+    y = beta/(1-beta) * eta + (beta^2/(1-beta)) * eps + beta * [0; eps(1:end-1)];
+    XY = [x y];
+    if nargout>1, Y_only = y; end
+end
+
+function [Acomp, P] = estimate_var_chol(Y, p)
+% Estimate VAR(p) with intercept and return companion matrix and Cholesky
+    [T, n] = size(Y);
+    Xlag = mlag(Y, p);
+    X = [ones(T,1), Xlag];
+    Ytrim = Y(p+1:end, :); Xtrim = X(p+1:end, :);
+    
+    B = Xtrim \ Ytrim;
+    U = Ytrim - Xtrim * B;
+    SigmaU = (U' * U) / (size(U,1) - size(B,1));
+   
+    A = B(2:end,:).'; % A = [A1, A2, ..., Ap]
+    Acomp = [A; eye(n*(p-1)), zeros(n*(p-1), n)];
+    P = chol(SigmaU, 'lower');
+end
+\end{lstlisting}
+            
+    \subsection{Invertibility issues with Cholesky identification}
+    
+            A VAR with recursive (Cholesky) identification recovers fundamental shocks, i.e. those obtainable from one-sided filters of the data. Fundamentalness requires that the VMA polynomial $C(L)$ be invertible with a one-sided inverse: equivalently, $\det C(z)\neq 0$ for all $|z|\le 1$.
+            
+            Here
+            \begin{equation}
+            \det C(z)
+            =
+            \frac{\beta^2}{1-\beta}+\beta z-\frac{\beta}{1-\beta}z^2
+            =
+            -\frac{\beta}{1-\beta}(z-1)(z+\beta).
+            \end{equation}
+            
+            The zeros are $z=1$ and $z=-\beta$. With $0<\beta<1$, one zero lies inside the unit circle ($|-\beta|=\beta<1$) and one on it ($z=1$). Cholesky identification recovers the one-sided Wold innovations only under invertibility, i.e. when the structural VMA satisfies \(\det C(z)\neq 0\) for all \(|z|\le 1\); in our DGP, \(\det C(z)= -\frac{\beta}{1-\beta}(z-1)(z+\beta)\) has a zero at \(z=-\beta\) with \(|z|<1\), so the representation is non-invertible (non-fundamental) and a recursive VAR cannot retrieve the true economic shocks.
+            
+            A Cholesky VAR is constrained to use one-sided filters, so its “structural shocks” are linear combinations of $(\eta,\varepsilon)$ that whiten the reduced-form innovations but do not coincide with the economic shocks.
+            
+    \subsection{Predictions for estimated IRFs}
+            Because of non-invertibility, the VAR(4)+Cholesky IRFs converge (as $T\to\infty$) to pseudo-true objects that deliver orthogonal one-step-ahead innovations, not to $\Theta_h$ as in \ref{eq:ex3_irf} above. \\
+            
+            Concretely:
+            \begin{itemize}
+              \item Responses to $\eta$ are largely recovered correctly (they are contemporaneous spikes).
+              \item Responses to $\varepsilon$ are distorted: the VAR tends to create spurious mass at $h=0$ and $h=1$ for $x$ (where the true response is $0$), and to smear the clean $h=2$ spike into an earlier, hump-shaped reaction. Responses of $y$ to $\varepsilon$—which are truly concentrated at $h=0,1$—look closer but still mix in noise from the mismeasured second shock.
+            \end{itemize}
+            
+            \paragraph{Comparison to Monte Carlo output.}
+            In finite samples the empirical mean IRFs will already display these features: (i) close agreement for $x\leftarrow\eta$ and $y\leftarrow\eta$ on impact; (ii) clear disagreement for $x\leftarrow\varepsilon$ (spurious activity at $h=0,1$ instead of a pure $h=2$ spike); and (iii) mild distortions for $y\leftarrow\varepsilon$.
+
+            \begin{figure}[H]
+                \centering
+              % center an oversized box relative to the line width
+                \makebox[\linewidth][c]{%
+                    \includegraphics[width=1.15\linewidth]{output/3_irfs_all_VAR4_N500_T500.pdf}%
+                    }%
+                \caption{Estimated IRFs (in blue) against the true responses (dashed), including the 95\% CI in light blue}
+                \label{fig:3_irfs_all_VAR4_N500_T500}
+            \end{figure}
+
+\newpage
+\begin{lstlisting}[language=Matlab]
+IRF_draws = zeros(2,2,H3+1,Nmc3);
+for r = 1:Nmc3
+    [X, ~] = simulate_dgp_invertibility(T3+B3, beta3, SigU3);
+    X = X(B3+1:end,:);
+    [Acomp, Pchol] = estimate_var_chol(X, p3);
+    IRF_draws(:,:,:,r) = var_irf_from_companion(Acomp, Pchol, H3);
+end
+
+IRF_mean = mean(IRF_draws, 4);
+IRF_lo   = prctile(IRF_draws, 2.5, 4);
+IRF_hi   = prctile(IRF_draws, 97.5, 4);
+plot_irfs_ex3(trueIRF, IRF_mean, IRF_lo, IRF_hi, p3, Nmc3, T3, exportFig);
+\end{lstlisting}
+        \end{solution}  
+
+%        \begin{figure}[H]
+%            \centering
+%            \includegraphics[width=0.5\linewidth]{output/Q4_shock.png}
+%            \caption{Visual representation of a generic shock following the 2016 Brexit referendum}
+%            \label{fig:Q4_shock}
+%        \end{figure}
+
+%========================================================
+
+\newpage
+\section{Granger causality}
+
+    Read the paper ``\href{https://www.aeaweb.org/articles?id=10.1257/0002828042002651}{A New Measure of Monetary Shocks: Derivation and Implications}'', by Christina D.\ Romer and David H.\ Romer \cite{10.1257/0002828042002651}, \emph{The American Economic Review}, Vol.\ 94, No.\ 4 (Sep., 2004), pp.\ 1055--1084 available on the blackboard. 
+    
+    Download the file \texttt{Romer\_Romer.xlsx}. There, you will find 4 time series: US inflation, US unemployment, US federal funds rate, the Romer and Romer monetary policy shocks from 1969Q1 to 1996Q4. 
+    Run a VAR with 4 lags and test for Granger causality of the Romer and Romer shocks. 
+    Are the Romer and Romer shocks Granger-causing other variables or not? Discuss. 
+    Are the other variables Granger-causing the Romer and Romer dates? Discuss. \\
+
+    \begin{solution} \\
+
+        Let $z_t=(\pi_t,u_t, i_t, \varepsilon^{RR}_t)'$ collect respectively quarterly US inflation, unemployment, the federal funds rate, and the Romer--Romer monetary policy shock. We estimate a VAR($p$) with an intercept and $p=4$ (one year of lags), and test Granger causality via Wald restrictions that the $p$ lag coefficients of the candidate ``cause'' on the target equation are jointly zero. Under mild regularity, the Wald statistic is asymptotically $\chi^2_r$ ($r$ restrictions); finite-sample inference can be based on an $F$ statistic with $(r,\,T-K)$ degrees of freedom.
+
+\begin{lstlisting}[language=Matlab]
+p4 = 4;
+romer_path = fullfile(pwd, 'ps2', 'data', 'Romer_Romer2004.csv');
+alpha4 = 0.05;
+
+Ttbl = readtable(romer_path, 'PreserveVariableNames', true);
+Ttbl.Properties.VariableNames = lower(Ttbl.Properties.VariableNames);
+
+varOrder = {'inflation','unemployment','ffr','rrshock'};
+Yraw = double(Ttbl{:, varOrder});
+Yraw = Yraw(all(~isnan(Yraw), 2), :);
+[Tobs, n] = size(Yraw);
+\end{lstlisting}
+
+    \subsection{Why RR shocks are a good candidate ``cause''}
+        
+        RR shocks are residual changes in the \emph{intended} funds rate around FOMC meetings, purged of the Fed staff (Greenbook) forecasts of real activity and inflation. By design, the series aims to strip out both short-run endogeneity and anticipatory policy moves, so it should 
+
+        \begin{enumerate}[label=(\roman*)]
+            \item move the actual policy rate and
+            \item be orthogonal to predictable movements in activity and prices known at the time of the decision.
+        \end{enumerate}
+
+\begin{lstlisting}[language=Matlab]
+Xlags = mlag(Yraw, p4);
+X = [ones(Tobs,1), Xlags];
+Y = Yraw;
+
+Xt = X(p4+1:end, :);
+Yt = Y(p4+1:end, :);
+[T_eff, K] = size(Xt);
+df = T_eff - K;
+
+B = Xt \ Yt;
+U = Yt - Xt * B;
+s2 = sum(U.^2, 1) ./ df;
+invXX = (Xt' * Xt) \ eye(K);
+\end{lstlisting}
+
+\begin{lstlisting}[language=Matlab]
+labels = ["Inflation","Unemployment","FedFundsRate","rrshock"];
+shockIdx = 4;
+
+res = [];
+% (A) Shock -> Others
+for yEq = 1:3
+    res = [res; run_gc_test(B, s2, invXX, df, p4, K, shockIdx, yEq, labels)]; 
+end
+% (B) Others -> Shock (individually)
+for xVar = 1:3
+    res = [res; run_gc_test(B, s2, invXX, df, p4, K, xVar, shockIdx, labels)];
+end
+% (C) Others -> Shock (jointly)
+res = [res; run_gc_test(B, s2, invXX, df, p4, K, 1:3, shockIdx, labels)];
+\end{lstlisting}
+
+    \subsection{Results}
+
+        Table~\ref{tab:4_gc-wald-f} reports the joint Wald tests from the VAR(4), using both the large-sample $\chi^2$ and finite-sample $F$ versions.
+
+        \begin{table}[!htbp]
+        \centering
+        \footnotesize
+        \begin{threeparttable}
+        \caption{Granger-Style Causality Tests (Wald $\chi^2$ and $F$)}
+        \label{tab:4_gc-wald-f}
+        \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}} 
+            l        % Cause
+            c        % arrow
+            l        % Effect
+            S[table-format=1.0]   % Num lags
+            S[table-format=2.0]   % Num restrictions
+            S[table-format=2.3]   % Wald chi2
+            S[scientific-notation = true, round-mode=figures, round-precision=3] % p_chi2
+            S[table-format=2.3]   % F stat
+            S[scientific-notation = true, round-mode=figures, round-precision=3] % p_F
+        }
+        \toprule
+        {Cause} & & {Effect} & {Lags} & {Restr.} & {$\chi^2$} & {$p(\chi^2)$} & {$F$} & {$p(F)$} \\
+        \midrule
+        rrshock                            & $\rightarrow$ & Inflation         & 4 &  4 &  8.51782190677834 & 7.43488561279627e-02 & 2.12945547669459 & 8.34819162754216e-02 \\
+        rrshock                            & $\rightarrow$ & Unemployment      & 4 &  4 &  8.75119708695948 & 6.76283085039596e-02 & 2.18779927173987 & 7.65349526990764e-02 \\
+        rrshock                            & $\rightarrow$ & FedFundsRate      & 4 &  4 & 36.24408883282050 & 2.57768848710427e-07 & 9.06102220820513 & 3.31331533476309e-06 \\
+        Inflation                          & $\rightarrow$ & rrshock           & 4 &  4 &  2.34275989758539 & 6.72995213026955e-01 & 0.58568997439635 & 6.73798082095038e-01 \\
+        Unemployment                       & $\rightarrow$ & rrshock           & 4 &  4 &  3.47742431598297 & 4.81319319412685e-01 & 0.86935607899574 & 4.85551056831448e-01 \\
+        FedFundsRate                       & $\rightarrow$ & rrshock           & 4 &  4 &  5.25518954634842 & 2.62101107956511e-01 & 1.31379738658711 & 2.70819322552487e-01 \\
+        All & $\rightarrow$ & rrshock & 4 & 12 & 10.44984736057190 & 5.76558889447645e-01 & 0.87082061338099 & 5.78802823469170e-01 \\
+        \bottomrule
+        \end{tabular*}
+        \begin{tablenotes}[flushleft]
+        \footnotesize
+        \item Notes: Each row reports a Wald $\chi^2$ test and its $p$-value, and the corresponding $F$-test and $p$-value, for the null that the listed \emph{Cause} does not (Granger-)cause the \emph{Effect}. “Lags” is the number of included lags; “Restr.” is the number of linear restrictions.
+        \end{tablenotes}
+        \end{threeparttable}
+        \end{table}
+
+        
+            \subsubsection{Do RR shocks Granger-cause the other variables?} 
+            
+                Yes for the policy rate, and only weak (10\%) evidence for activity/prices over a one-year horizon. The null that past RR shocks do not enter the $i_t$ equation is decisively rejected (Wald $\chi^2=36.24$, $p<10^{-6}$). This is exactly what one expects from the construction: RR shocks are innovations to intended policy that should map into subsequent movements in the actual funds rate.
+
+                Romer and Romer (2004) show that their shocks produce faster, larger responses of output and prices than conventional funds-rate innovations in both single-equation regressions and VARs, and that they remove the usual ``price puzzle''. We can observe this directly from their Figures 2, 4--6, and is the surrounding discussion. \\
+            
+                For inflation and unemployment, the $\chi^2$ and $F$ tests are not significant at 5\% but are close at 10\% ($p\approx0.07\!-\!0.08$). From a time-series perspective this is not entirely surprising: with quarterly data and $p=4$, the Granger test only asks whether shocks help predict next year's $\pi_t$ or $u_t$. Theory and evidence both imply that the real activity response leads the price response and that price-level effects arrive with longer lags than one year; failing to reject at 5\% in this short horizon therefore does not contradict the sizable medium-run effects documented in Romer and Romer impulse responses.
+
+                More specifically, the authors find output begins to fall two quarters and the price level declines noticeably only after roughly two years; the four-year price effect is about $-4$ to $-6\%$, depending on the price index and specification.
+
+            \subsubsection{Do the other variables Granger-cause the RR shocks?}
+            
+                No: neither inflation, nor unemployment, nor the funds rate individually or jointly Granger-cause $\varepsilon^{RR}_t$ (all $p>0.26$; joint $p=0.58$). This is exactly what we want to see if the RR shocks have been purged of systematic responses to information about future macro conditions, as they should be forecast-orthogonal with respect to the macro state (hence not Granger-caused by it).
+                
+                Romer and Romer explicitly purge intended policy moves using contemporaneous staff forecasts of growth, inflation, and unemployment at multiple horizons.
+ 
+    \end{solution}
+
+\printbibliography
+
+\end{document}

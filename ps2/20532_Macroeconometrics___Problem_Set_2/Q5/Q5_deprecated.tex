@@ -1,0 +1,119 @@
+%========================================================
+
+\newpage
+\section{A special case of unit root testing} \label{sec:scurt}
+
+    Generate data under the data generating process (DGP):
+    \[
+      y_t = \alpha + y_{t-1} + \varepsilon_t
+    \]
+    and estimate the following regression:
+    \[
+      y_t = \alpha + \rho y_{t-1} + \varepsilon_t
+    \]
+    to test the null hypothesis $H_0 : \rho = 1$ by means of a t-test. \\
+
+        \begin{solution}
+
+            Let the DGP be a random walk with drift
+            \[
+            y_t \;=\; \alpha + y_{t-1} + \varepsilon_t,\qquad \varepsilon_t\stackrel{i.i.d.}{\sim}(0,\sigma^2),
+            \]
+            and consider the levels regression
+            \[
+            y_t \;=\; \alpha + \rho\,y_{t-1} + u_t,
+            \]
+            with $H_0:\rho=1$. Under $H_0$ the specification is correct and $u_t=\varepsilon_t$.
+
+\begin{lstlisting}[language=Matlab]
+% Settings
+T5       = 250;
+R5       = 5000;
+sigma2_5 = 0.6;
+alpha0_5 = 0.5;
+beta1_5  = 0.05;
+
+% Critical values
+z975 = 1.95996; % Two-sided 5% Normal
+t975_a = tinv(0.975, T5-1-2);
+t975_b = tinv(0.975, T5-1-3);
+\end{lstlisting}
+            
+        \end{solution}
+
+    \begin{enumerate}[label=\alph*.]
+        \item What happens to the distribution of the t-test in this case? How do you intuitively explain this? Do you notice anything interesting on the mean and on the shape of the distribution of the t-statistic?
+
+            \emph{(Hint: the formal proof, which is beyond what we have learnt in the course, can be found in Hamilton, chapter 17 and it is based on results in Sims, Stock and Watson, \textit{Econometrica}, 1990. An intuitive explanation can be found in the following sentence from Enders: ``If the data-generating process contains any deterministic regressors (i.e., an intercept or a time trend) and the estimating equation contains these deterministic regressors, inference on all coefficients can be conducted using a t-test or an F-test. This is because a test involving a single restriction across parameters with different rates of convergence is dominated asymptotically by the parameters with the slowest rates of convergence'', [which is the one on the deterministic regressor (my note)].)}
+
+            \begin{solution}
+
+\begin{lstlisting}[language=Matlab]
+t_rho_a = zeros(R5,1);
+for r = 1:R5
+    y = simulate_ar1(T5, 1, sigma2_5, alpha0_5, 0); % RW with drift
+    stats = run_ols(y(2:end), y(1:end-1), true);
+    t_rho_a(r) = (stats.b(2) - 1) / stats.se(2);
+end
+
+rejN_2s_a = mean(abs(t_rho_a) > z975);
+rejT_2s_a = mean(abs(t_rho_a) > t975_a);
+\end{lstlisting}       
+
+\begin{lstlisting}[language=Matlab]
+fprintf('\n=== Exercise 5(a): Intercept only ===\n');
+fprintf('mean(t) = %.3f, sd(t) = %.3f, skew = %.3f, kurt = %.3f\n', ...
+    mean(t_rho_a), std(t_rho_a), skewness(t_rho_a), kurtosis(t_rho_a));
+fprintf('Rej@5%% (two-sided): Normal = %.3f, Student(df=%d) = %.3f\n', ...
+    rejN_2s_a, T5-1-2, rejT_2s_a);
+
+plot_t_hist_with_normal(t_rho_a, z975, ...
+    '(5a) $t$-stat for $H_0:\ \rho=1$ (levels, intercept only)', ...
+    exportFig, '5a_tstat_hist_levels_intercept.pdf');
+normal_qqplot_simple(t_rho_a, ...
+    '(5a) Normal QQ-plot of $t$-stat ($H_0:\ \rho=1$)', ...
+    exportFig, '5a_tstat_normal_qq.pdf');
+\end{lstlisting}  
+                
+            \end{solution}
+
+        \item Based on what we have learnt at point a., add a time trend (another deterministic regressor) to both the DGP and the estimating equation at point a. and check that also in this case the results of Sims, Stock and Watson hold [summarized in Rule 2 in Enders, p.~267].
+
+            \begin{solution}
+
+\begin{lstlisting}[language=Matlab]
+t_rho_b = zeros(R5,1);
+tvec5 = (1:T5)';
+for r = 1:R5
+    y_rw = simulate_ar1(T5, 1, sigma2_5, alpha0_5, 0);
+    y = y_rw + beta1_5 * tvec5; % Add deterministic trend
+    
+    yt = y(2:end);
+    X = [tvec5(2:end), y(1:end-1)];
+    stats = run_ols(yt, X, true); % OLS on [1, t, y_lag]
+    
+    t_rho_b(r) = (stats.b(3) - 1) / stats.se(3);
+end
+
+rejN_2s_b = mean(abs(t_rho_b) > z975);
+rejT_2s_b = mean(abs(t_rho_b) > t975_b);
+\end{lstlisting}      
+
+\begin{lstlisting}[language=Matlab]
+fprintf('\n=== Exercise 5(b): Intercept + trend ===\n');
+fprintf('mean(t) = %.3f, sd(t) = %.3f, skew = %.3f, kurt = %.3f\n', ...
+    mean(t_rho_b), std(t_rho_b), skewness(t_rho_b), kurtosis(t_rho_b));
+fprintf('Rej@5%% (two-sided): Normal = %.3f, Student(df=%d) = %.3f\n', ...
+    rejN_2s_b, T5-1-3, rejT_2s_b);
+
+plot_t_hist_with_normal(t_rho_b, z975, ...
+    '(5b) $t$-stat for $H_0:\ \rho=1$ (levels, intercept + trend)', ...
+    exportFig, '5b_tstat_hist_levels_trend.pdf');
+normal_qqplot_simple(t_rho_b, ...
+    '(5b) Normal QQ-plot of $t$-stat ($H_0:\ \rho=1$) with trend', ...
+    exportFig, '5b_tstat_normal_qq.pdf');
+\end{lstlisting}  
+                
+            \end{solution}
+        
+    \end{enumerate}
