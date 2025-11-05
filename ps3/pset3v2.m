@@ -1,4 +1,4 @@
-%% 20532 Macroeconometrics | Problem Set 2
+%% 20532 Macroeconometrics | Problem Set 3
 %
 % ---------------------------------------------------------------
 % Author: Stefano Graziosi
@@ -9,7 +9,7 @@
 clear; clc; close all; format compact;
 
 % Output directory setup
-outdir = fullfile(pwd,'ps2/output');
+outdir = fullfile(pwd,'ps3/output');
 if ~exist(outdir,'dir'), mkdir(outdir); end
 
 % Clean, consistent figure defaults
@@ -30,7 +30,313 @@ rng(20532,'twister');                               % Set seed for reproducibili
 
 %% Exercise 1
 
+file = '/Users/stefanograziosi/Documents/GitHub/20532-macroeconometrics-ps/ps3/data/ps3_monetary_shock.csv';
+table_3a = readtable(file, 'Delimiter', ',', 'PreserveVariableNames', true);  % keeps names as in file
+
+% Access columns:
+obs_q1  = table_3a.obs;
+log_gdp = table_3a.log_gdp;
+log_p   = table_3a.log_p;
+ffr     = table_3a.ffr;
+
+% Stack variables and basic settings
+Y      = [log_gdp, log_p, ffr];                    % [real activity, prices, policy]
+labels = ["log_gdp","log_p","ffr"];                % Ordering used for Cholesky (Enders §5)
+p      = 4;                                        % Quarterly default; adjust as needed
+H      = 40;                                       % IRF / FEVD horizons
+[T, N] = size(Y);
+
+%%% Question (a)
+% Estimate the VAR (suppose with a constant) on the $N$ variables in $y_t$ and store the coefficients (with the constants collected in the $(N\times1)$ vector $\hat c$ and the $(N\times N)$ autoregressive coefficients in the matrix $\hat A$). 
+% If there are $p$ lags, you can express the VAR($p$) as a VAR(1) with the companion form) and the $(T\times N)$ residuals $\hat\varepsilon$ (note that $T$ is the number of estimated residuals, those obtained once one eliminated the lags lost in the estimation).
+
+Xlag   = mlag(Y, p);                               % [L1(Y) ... Lp(Y)]  (uses your helper)
+X      = [ones(T,1), Xlag];                        % Add intercept
+Ytrim  = Y(p+1:end, :);
+Xtrim  = X(p+1:end, :);
+
+B      = Xtrim \ Ytrim;                            % (1+N*p) x N, columns = equations
+U      = Ytrim - Xtrim*B;                          % Reduced-form residuals (T_eff x N)
+T_eff  = size(U,1);
+k      = size(B,1);
+df     = T_eff - k;
+
+SigmaU = (U' * U) / df;                            % Residual covariance (unbiased)
+
+c_hat  = B(1,:).';                                 % N x 1 intercepts
+A_hat  = reshape(B(2:end,:), N, N*p);              % N x (N*p) stacked [A1 ... Ap]
+A_blk  = cell(p,1);                                % Store Ai blocks for simulation
+for i = 1:p
+    A_blk{i} = A_hat(:, (N*(i-1)+1) : N*i);        % Ai is N x N
+end
+
+% Companion VAR(1) form
+Acomp  = [A_hat; eye(N*(p-1)), zeros(N*(p-1), N)]; % (N*p) x (N*p)
+
+% Cholesky factor for orthogonalization (Enders (5.38)-(5.41))
+try
+    P = chol(SigmaU, 'lower');                     % Σ_u = P P' ; ε_t = P^{-1} u_t ; IRF = Φ_h P
+catch
+    % In case Σ_u is nearly singular, nudge to nearest SPD
+    Sig = (SigmaU + SigmaU')/2;
+    [V,D] = eig(Sig);
+    D = max(D, 1e-12*eye(N));
+    P = chol(V*D*V', 'lower');
+end
+
+% Save “original” VAR objects (handy to compare against bootstrap draw)
+VAR_orig = struct('p',p,'labels',labels,'c',c_hat,'A',A_hat,'Ablocks',{A_blk}, ...
+                  'Acomp',Acomp,'U',U,'SigmaU',SigmaU,'P',P);
+
+%%% Question (b)
+% Sample with replacement from the estimated residuals so to form a new series of residuals $\tilde\varepsilon$ of dim $(T\times N)$. 
+% One way of doing it is generate $T$ random integers from $1$ to $T$ (for example, call the random draw of integers \texttt{PER}) and then set $\tilde\varepsilon = \hat\varepsilon[\texttt{PER},:]$; don’t use the command \texttt{permute}.
+
+PER         = randi(T_eff, [T_eff, 1]);            % indices 1..T_eff
+eps_tilde   = U(PER, :);                           % T_eff x N bootstrapped residuals
+
+%%% Question (c)
+% Use the newly generated residuals and the estimated coefficients to construct new series:
+%    \[
+%        \tilde y_t \;=\; \hat c \;+\; \hat A\,\tilde y_{t-1} \;+\; \tilde\varepsilon_t.
+%    \]
+%    The starting values are the first values of $y_t$ (in the case of a VAR(1), just $y_1$).
+
+% Initialize with the *actual* first p observations (standard practice).
+Ysim        = zeros(T, N);
+Ysim(1:p,:) = Y(1:p,:);
+
+for t = (p+1):T
+    ysum = zeros(N,1);
+    for L = 1:p
+        ysum = ysum + A_blk{L} * Ysim(t-L, :)';
+    end
+    % Align boot residual index so eps_tilde(1,:) corresponds to t=p+1
+    Ysim(t,:) = (c_hat + ysum)' + eps_tilde(t-p, :);
+end
+
+Ysim_trim = Ysim(p+1:end, :);                      % Align with estimation sample length
+
+%%% Question (d)
+% Estimate a VAR on the new series $\tilde y_t$; identify shocks and compute im\-pulse responses and variance decompositions. Store the impulse responses and variance decompositions. 
+
+% Estimation on the simulated data (same p)
+Xlag_s  = mlag(Ysim, p);
+X_s     = [ones(T,1), Xlag_s];
+B_s     = X_s(p+1:end,:) \ Ysim_trim;
+U_s     = Ysim_trim - X_s(p+1:end,:)*B_s;
+df_s    = size(U_s,1) - size(B_s,1);
+SigmaU_s= (U_s' * U_s) / df_s;
+
+c_s     = B_s(1,:).';
+A_s     = reshape(B_s(2:end,:), N, N*p);
+A_blk_s = cell(p,1);
+for i = 1:p
+    A_blk_s{i} = A_s(:, (N*(i-1)+1) : N*i);
+end
+Acomp_s = [A_s; eye(N*(p-1)), zeros(N*(p-1), N)];
+
+% Cholesky identification on simulated VAR
+try
+    P_s = chol(SigmaU_s, 'lower');
+catch
+    Sig = (SigmaU_s + SigmaU_s')/2;
+    [V,D] = eig(Sig);
+    D = max(D, 1e-12*eye(N));
+    P_s = chol(V*D*V', 'lower');
+end
+
+% Structural IRFs via companion MA: Θ_h = Φ_h P  (Enders §5 “innovation accounting”)  :contentReference[oaicite:8]{index=8}
+np    = size(Acomp_s,1);
+J     = [eye(N), zeros(N, np-N)];
+Phi   = zeros(N,N,H+1);                             % reduced-form MA matrices Φ_0..Φ_H
+IRF   = zeros(N,N,H+1);                             % structural IRFs Θ_h
+
+A_pow = eye(np);
+for h = 0:H
+    Phi(:,:,h+1) = J * A_pow * J';
+    IRF(:,:,h+1) = Phi(:,:,h+1) * P_s;             % orthogonalized (unit-variance shocks)
+    A_pow = A_pow * Acomp_s;
+end
+
+% FEVD: for horizon n, contribution of shock j to var(i) = sum_{s=0}^{n-1} Θ_s(i,j)^2 / total
+FEVD = zeros(N,N,H);                                % horizons 1..H (no h=0 FEVD)
+for n = 1:H
+    C = zeros(N,N);                                 % cumulative squares up to n-1
+    for s = 0:(n-1)
+        G  = IRF(:,:,s+1);                          % Θ_s
+        C  = C + G.^2;                              % elementwise square & accumulate
+    end
+    for i = 1:N
+        denom = sum(C(i,:));
+        if denom > 0
+            FEVD(i,:,n) = C(i,:) / denom;
+        else
+            FEVD(i,:,n) = NaN;
+        end
+    end
+end
+
+% Store everything neatly; save to disk for later steps (e,f)
+VAR_boot1 = struct( ...
+    'p',p,'labels',labels, ...
+    'Ysim',Ysim,'Ysim_trim',Ysim_trim, ...
+    'B',B_s,'c',c_s,'A',A_s,'Ablocks',{A_blk_s},'Acomp',Acomp_s, ...
+    'U',U_s,'SigmaU',SigmaU_s,'P',P_s, ...
+    'IRF',IRF,'Phi',Phi,'FEVD',FEVD, ...
+    'H',H,'ordering','[log\\_gdp, log\\_p, ffr] (Cholesky)');
+
+save(fullfile(outdir, sprintf('ps3_ex1_bootstrap_draw1_VARp%d_H%d.mat', p, H)), ...
+     'VAR_orig','VAR_boot1');
+
+%%% Question (e)
+% Repeat steps b. to d. \(K\) times (e.g., \(K=1000\)).
+
+K = 1000;                                        % number of bootstrap draws
+if ~exist('IRF_orig','var')
+    IRF_orig = var_irf_from_companion(Acomp, P, H);  % baseline IRFs from original VAR
+end
+
+IRF_draws = zeros(N, N, H+1, K);                 % store all structural IRFs
+
+% Precompute for speed / consistency
+J      = [eye(N), zeros(N, N*(p-1))];
+np     = size(Acomp,1);
+
+fprintf('Bootstrapping IRFs: K=%d, VAR(%d), H=%d\n', K, p, H);
+tic
+for kboot = 1:K
+    % ---- (b) Resample residuals row-wise ----
+    PER       = randi(T_eff, [T_eff, 1]);
+    eps_tilde = U(PER, :);                       % T_eff x N
+
+    % ---- (c) Simulate new series with fixed initial conditions ----
+    Ysim        = zeros(T, N);
+    Ysim(1:p,:) = Y(1:p,:);                      % use actual first p obs
+    for t = (p+1):T
+        ysum = zeros(N,1);
+        for L = 1:p
+            ysum = ysum + A_blk{L} * Ysim(t-L, :)';
+        end
+        Ysim(t,:) = (c_hat + ysum)' + eps_tilde(t-p, :);
+    end
+    Ysim_trim = Ysim(p+1:end, :);
+
+    % ---- (d) Re-estimate VAR on Ysim and compute IRFs (Cholesky) ----
+    Xlag_s  = mlag(Ysim, p);
+    X_s     = [ones(T,1), Xlag_s];
+    B_s     = X_s(p+1:end,:) \ Ysim_trim;
+    U_s     = Ysim_trim - X_s(p+1:end,:)*B_s;
+    df_s    = size(U_s,1) - size(B_s,1);
+    SigmaU_s= (U_s' * U_s) / df_s;
+
+    A_s     = reshape(B_s(2:end,:), N, N*p);
+    Acomp_s = [A_s; eye(N*(p-1)), zeros(N*(p-1), N)];
+
+    % Robust Cholesky
+    try
+        P_s = chol(SigmaU_s, 'lower');
+    catch
+        Sig = (SigmaU_s + SigmaU_s')/2;
+        [V,D] = eig(Sig);
+        D = max(D, 1e-12*eye(N));
+        P_s = chol(V*D*V', 'lower');
+    end
+
+    % Structural IRFs via companion MA: Θ_h = Φ_h P_s
+    np_s  = size(Acomp_s,1);
+    if np_s ~= np
+        % (Should not happen unless dimensions change)
+        J = [eye(N), zeros(N, np_s-N)];
+    end
+    A_pow = eye(np_s);
+    for h = 0:H
+        Phi_h = J * A_pow * J';
+        IRF_draws(:,:,h+1,kboot) = Phi_h * P_s;
+        A_pow = A_pow * Acomp_s;
+    end
+
+    if mod(kboot, max(1, floor(K/10))) == 0
+        fprintf('  ... %d/%d draws completed\n', kboot, K);
+    end
+end
+toc
+
+% Save draws to disk for reproducibility / later use
+save(fullfile(outdir, sprintf('ps3_ex1_bootstrap_IRFs_VARp%d_H%d_K%d.mat', p, H, K)), ...
+     'IRF_draws','IRF_orig','labels','p','H','K');
+
+%%% Question (f)
+% At the end you have a set of 1000 impulse responses. Plot the 2.5\% and 97.5\% percentile (command \texttt{prctile}) of that empirical distribution. This is your 95\% confidence interval.
+
+IRF_lo   = prctile(IRF_draws,  2.5, 4);
+IRF_hi   = prctile(IRF_draws, 97.5, 4);
+IRF_med  = prctile(IRF_draws, 50.0, 4);   % optional: median curve
+
+h = 0:H;
+
+% Plot: one figure per shock; each figure has N panels (responses)
+for j = 1:N
+    fh  = figure('Position',[90 90 880 760]);
+    tlo = tiledlayout(N,1,'Padding','compact','TileSpacing','compact');
+
+    for i = 1:N
+        nexttile; hold on; grid on
+
+        lo = squeeze(IRF_lo(i,j,:));
+        hi = squeeze(IRF_hi(i,j,:));
+        md = squeeze(IRF_med(i,j,:));
+        bt = squeeze(IRF_draws(i,j,:,:)); %#ok<NASGU> % (H+1) x K (unused here but handy to inspect)
+        est= squeeze(IRF_orig(i,j,:));
+
+        % 95% band
+        fill([h, fliplr(h)], [lo' fliplr(hi')], ...
+            [0.85 0.9 1.0], 'EdgeColor','none', 'FaceAlpha',0.8, 'DisplayName','95% band');
+
+        % Estimated (original-sample) IRF
+        plot(h, est, '-', 'LineWidth', 1.8, 'DisplayName','Estimate');
+
+        % Median bootstrap IRF (optional guide)
+        plot(h, md, '--', 'LineWidth', 1.2, 'DisplayName','Bootstrap median');
+
+        yline(0,'k:','HandleVisibility','off');
+        ylabel(labels(i));
+        if i==1
+            title(sprintf('IRFs to shock: %s (Cholesky ordering)', labels(j)));
+        end
+        if i==N
+            xlabel('Horizon h');
+        end
+        if i==1
+            legend('Location','best');
+        end
+    end
+
+    exportFig(fh, sprintf('ps3_ex1_irf_bands_shock_%s_VARp%d_H%d_K%d.pdf', labels(j), p, H, K));
+    close(fh);
+end
+
+% Also save the percentile arrays (useful for tables / grading artifacts)
+save(fullfile(outdir, sprintf('ps3_ex1_irf_percentiles_VARp%d_H%d_K%d.mat', p, H, K)), ...
+     'IRF_lo','IRF_hi','IRF_med','labels','p','H','K');
+
 %% Exercise 2
+% Read the paper \emph{``\href{https://www.aeaweb.org/articles?id=10.1257/aer.89.1.249}{Technology, Employment, and the Business Cycle: Do Technology Shocks Explain Aggregate Fluctuations?}''} by Jordi Gal\'{\i} \cite{10.1257/aer.89.1.249}, \emph{American Economic Review}, 89(1), 1999, 249--271.
+% Using the dataset in the second sheet of \texttt{data\_ps3.xlsx}, replicate Figure 2 in the paper and compute bootstrapped confidence bands.
+
+file = '/Users/stefanograziosi/Documents/GitHub/20532-macroeconometrics-ps/ps3/data/ps3_technology_shock.csv';
+table_3b = readtable(file, 'Delimiter', ',', 'PreserveVariableNames', true);  % keeps names as in file
+
+% Access columns:
+obs_q2  = table_3b.obs;
+y_t     = table_3b.y_t;
+hours   = table_3b.hours;
+
+%%% Question (a)
+% Replication of Figure 2
+
+%%% Question (b)
+% Bootstrapped confidence bands
 
 %% Helper Functions
 
