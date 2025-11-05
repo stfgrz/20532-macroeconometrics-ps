@@ -327,14 +327,26 @@ save(fullfile(outdir, sprintf('ps3_ex1_irf_percentiles_VARp%d_H%d_K%d.mat', p, H
 file = '/Users/stefanograziosi/Documents/GitHub/20532-macroeconometrics-ps/ps3/data/ps3_technology_shock.csv';
 table_3b = readtable(file, 'Delimiter', ',', 'PreserveVariableNames', true);  % keeps names as in file
 
-% Access columns:
+% -------------------- Settings --------------------
+p  = 4;                          % quarterly VAR lags (Galí uses short lags in bivariate model)
+H  = 40;                         % horizons (quarters)
+K  = 1000;                       % bootstrap replications
+rng(20532,'twister');
 
-date_q = obs_q2;         % quarterly date label (unused in estimation)
-yg     = y_t(:);         % productivity growth (Δ log(AP))
-hg     = hours(:);       % hours growth (first-differenced log hours), if already a growth rate
+% -------------------- Data prep (consistent with Galí 1999, Panel A) --------------------
+% Inputs are LEVELS: OPHNFB (output per hour), HOURS (hours per capita).
+% VAR uses GROWTH RATES: Δlog(OPHNFB), Δlog(HOURS per capita).
 
-% If your 'hours' is in levels, uncomment the next line to first-difference:
-% hg = [NaN; diff(hours(:))];
+lp  = log(y_t(:));        % log productivity level (OPHNFB)
+lhc = log(hours(:));      % log hours-per-capita level
+
+yg = diff(lp);            % productivity growth Δlog(Y/H)
+hg = diff(lhc);           % labor-input growth Δlog(Hours per capita)
+
+Y = [yg hg];              % columns: [Δprod, Δhours_pc]
+[T, n] = size(Y);
+assert(n==2, 'Expecting two variables: Δprod and Δhours per capita');
+
 
 % Align & drop first obs if needed
 keep = ~isnan(yg) & ~isnan(hg);
@@ -350,11 +362,186 @@ H  = 40;                         % horizons (quarters)
 K  = 1000;                       % bootstrap replications
 rng(20532,'twister');
 
-%%% Question (a)
-% Replication of Figure 2
+% -------------------- Estimate reduced-form VAR --------------------
+Xlag  = mlag(Y, p);                      % from your helpers
+X     = [ones(T,1), Xlag];
+Ytrim = Y(p+1:end, :);
+Xtrim = X(p+1:end, :);
+Tef   = size(Ytrim,1);
 
-%%% Question (b)
-% Bootstrapped confidence bands
+B = Xtrim \ Ytrim;                       % (1 + n*p) x n
+U = Ytrim - Xtrim * B;                   % Tef x n residuals
+kpar = size(B,1);
+SigmaU = (U' * U) / (Tef - kpar);        % n x n residual covariance
+
+% Companion + VAR coefficients A = [A1 ... Ap]
+A  = B(2:end,:).';                       % n x (n*p)
+Acomp = [A; eye(n*(p-1)), zeros(n*(p-1), n)];
+
+% -------------------- BQ long-run identification --------------------
+% Long-run multiplier L = (I - A(1))^{-1}, with A(1) = sum_k A_k
+I2 = eye(n);
+A1sum = zeros(n);
+for k = 1:p
+    Ak = A(:, (n*(k-1)+1):(n*k));
+    A1sum = A1sum + Ak;
+end
+Linf = (I2 - A1sum) \ I2;                % (I - sum Ak)^(-1)
+
+% Long-run covariance Ω = L Σu L'
+OmegaLR = Linf * SigmaU * Linf';
+
+% Enforce lower-triangular long-run impact (technology is shock #1)
+Nlr = chol(OmegaLR, 'lower');            % = L * P  (lower triangular)
+P_BQ = Linf \ Nlr;                        % structural impact matrix so that e_t = P ε_t
+
+% -------------------- Structural IRFs --------------------
+TH = var_irf_from_companion(Acomp, P_BQ, H);    % from your helpers, TH(:,:,h+1)
+
+% Reduced-form to reported objects (levels = cumulative sums of growth)
+h = (0:H)';  H1 = H+1;
+
+irf_prod_g   = squeeze(TH(1,1,:));                 % Δprod to tech
+irf_hours_g  = squeeze(TH(2,1,:));                 % Δhours to tech
+irf_out_g  = irf_prod_g + irf_hours_g;             % Δlog(Output per capita) = Δlog(Y/H) + Δlog(Hours per capita)
+
+
+irf_prod_g2  = squeeze(TH(1,2,:));                 % Δprod to nontech
+irf_hours_g2 = squeeze(TH(2,2,:));                 % Δhours to nontech
+irf_out_g2 = irf_prod_g2 + irf_hours_g2;           % for non-technology shock
+
+% Cumulate to levels (percent deviations)
+C_tech_prod  = cumsum(irf_prod_g);
+C_tech_out   = cumsum(irf_out_g);
+C_tech_hours = cumsum(irf_hours_g);
+
+C_nt_prod    = cumsum(irf_prod_g2);
+C_nt_out     = cumsum(irf_out_g2);
+C_nt_hours   = cumsum(irf_hours_g2);
+
+% -------------------- Bootstrap bands (residual bootstrap) --------------------
+Ctech_prod_draws  = zeros(H1, K);
+Ctech_out_draws   = zeros(H1, K);
+Ctech_hours_draws = zeros(H1, K);
+
+Cnt_prod_draws    = zeros(H1, K);
+Cnt_out_draws     = zeros(H1, K);
+Cnt_hours_draws   = zeros(H1, K);
+
+Y0 = Y(1:p, :);                                % starting values
+
+for b = 1:K
+    % 1) resample residuals with replacement
+    idx = randi(Tef, Tef, 1);
+    Ub  = U(idx, :);
+
+    % 2) simulate bootstrap sample using estimated B and resampled residuals
+    Yb = zeros(T, n);
+    Yb(1:p, :) = Y0;                            % same initials
+    for t = (p+1):T
+        xrow = [1, reshape(flipud(Yb(t-p:t-1,:)).', 1, n*p)];   % [1 L1(Y) ... Lp(Y)]
+        Yb(t,:) = xrow * B + Ub(t-p,:);                          % align with U length
+    end
+
+    % 3) re-estimate VAR on Yb
+    Xlagb  = mlag(Yb, p);
+    Xb     = [ones(T,1), Xlagb];
+    Ybtrim = Yb(p+1:end,:);
+    Xbtrim = Xb(p+1:end,:);
+    Tefb   = size(Ybtrim,1);
+
+    Bb = Xbtrim \ Ybtrim;
+    Ub_res = Ybtrim - Xbtrim * Bb;
+    kparb  = size(Bb,1);
+    SigU_b = (Ub_res' * Ub_res) / (Tefb - kparb);
+
+    Ab = Bb(2:end,:).';
+
+    % long-run pieces
+    A1sumb = zeros(n);
+    for k2 = 1:p
+        Akb = Ab(:, (n*(k2-1)+1):(n*k2));
+        A1sumb = A1sumb + Akb;
+    end
+    Linfb   = (I2 - A1sumb) \ I2;
+    Omega_b = Linfb * SigU_b * Linfb';
+    Nlr_b   = chol(Omega_b, 'lower');
+    P_BQ_b  = Linfb \ Nlr_b;
+
+    % IRFs
+    Acomp_b = [Ab; eye(n*(p-1)), zeros(n*(p-1), n)];
+    THb = var_irf_from_companion(Acomp_b, P_BQ_b, H);
+
+    prod_g_b   = squeeze(THb(1,1,:));              % to tech
+    hours_g_b  = squeeze(THb(2,1,:));
+    out_g_b    = prod_g_b + hours_g_b;
+
+    prod_g2_b  = squeeze(THb(1,2,:));              % to nontech
+    hours_g2_b = squeeze(THb(2,2,:));
+    out_g2_b   = prod_g2_b + hours_g2_b;
+
+    Ctech_prod_draws(:,b)  = cumsum(prod_g_b);
+    Ctech_out_draws(:,b)   = cumsum(out_g_b);
+    Ctech_hours_draws(:,b) = cumsum(hours_g_b);
+
+    Cnt_prod_draws(:,b)    = cumsum(prod_g2_b);
+    Cnt_out_draws(:,b)     = cumsum(out_g2_b);
+    Cnt_hours_draws(:,b)   = cumsum(hours_g2_b);
+end
+
+% Percentile bands
+pct = [2.5 97.5];
+[lo_tp, hi_tp] = deal(prctile(Ctech_prod_draws,  pct(1), 2), prctile(Ctech_prod_draws,  pct(2), 2));
+[lo_to, hi_to] = deal(prctile(Ctech_out_draws,   pct(1), 2), prctile(Ctech_out_draws,   pct(2), 2));
+[lo_th, hi_th] = deal(prctile(Ctech_hours_draws, pct(1), 2), prctile(Ctech_hours_draws, pct(2), 2));
+
+[lo_np, hi_np] = deal(prctile(Cnt_prod_draws,    pct(1), 2), prctile(Cnt_prod_draws,    pct(2), 2));
+[lo_no, hi_no] = deal(prctile(Cnt_out_draws,     pct(1), 2), prctile(Cnt_out_draws,     pct(2), 2));
+[lo_nh, hi_nh] = deal(prctile(Cnt_hours_draws,   pct(1), 2), prctile(Cnt_hours_draws,   pct(2), 2));
+
+% -------------------- Plot (Figure 2 style) --------------------
+fh = figure('Position',[50 50 980 760]);
+tlo = tiledlayout(3,2,'Padding','compact','TileSpacing','compact');
+
+plotBand = @(x,lo,hi) fill([x; flipud(x)], [lo; flipud(hi)], [0.85 0.9 1.0], ...
+                           'EdgeColor','none', 'FaceAlpha',0.7);
+
+% Row 1: Productivity (level)
+nexttile; hold on; grid on
+plotBand(h, lo_tp, hi_tp); plot(h, C_tech_prod, 'k-', 'LineWidth',1.6)
+title('Technology shock \rightarrow Productivity (level)'); xlabel('Quarters'); ylabel('%')
+yline(0,'k--'); 
+
+nexttile; hold on; grid on
+plotBand(h, lo_np, hi_np); plot(h, C_nt_prod, 'k-', 'LineWidth',1.6)
+title('Non-technology shock \rightarrow Productivity (level)'); xlabel('Quarters'); ylabel('%')
+yline(0,'k--');
+
+% Row 2: Output (level)
+nexttile; hold on; grid on
+plotBand(h, lo_to, hi_to); plot(h, C_tech_out, 'k-', 'LineWidth',1.6)
+title('Technology shock \rightarrow Output per capita (level)'); xlabel('Quarters'); ylabel('%')
+yline(0,'k--');
+
+nexttile; hold on; grid on
+plotBand(h, lo_no, hi_no); plot(h, C_nt_out, 'k-', 'LineWidth',1.6)
+title('Non-technology shock \rightarrow Output per capita (level)'); xlabel('Quarters'); ylabel('%')
+yline(0,'k--');
+
+% Row 3: Hours (level)
+nexttile; hold on; grid on
+plotBand(h, lo_th, hi_th); plot(h, C_tech_hours, 'k-', 'LineWidth',1.6)
+title('Technology shock \rightarrow Hours per capita (level)'); xlabel('Quarters'); ylabel('%')
+yline(0,'k--');
+
+nexttile; hold on; grid on
+plotBand(h, lo_nh, hi_nh); plot(h, C_nt_hours, 'k-', 'LineWidth',1.6)
+title('Non-technology shock \rightarrow Hours per capita (level)'); xlabel('Quarters'); ylabel('%')
+yline(0,'k--');
+
+title(tlo, sprintf('Exercise 2 — BQ VAR(%d): IRFs with 95%% bootstrap bands (K=%d, H=%d)', p, K, H));
+exportFig(fh, sprintf('2_gali1999_fig2_VAR%d_K%d_H%d.pdf', p, K, H));
+close(fh);
 
 %% Helper Functions
 
