@@ -328,9 +328,27 @@ file = '/Users/stefanograziosi/Documents/GitHub/20532-macroeconometrics-ps/ps3/d
 table_3b = readtable(file, 'Delimiter', ',', 'PreserveVariableNames', true);  % keeps names as in file
 
 % Access columns:
-obs_q2  = table_3b.obs;
-y_t     = table_3b.y_t;
-hours   = table_3b.hours;
+
+date_q = obs_q2;         % quarterly date label (unused in estimation)
+yg     = y_t(:);         % productivity growth (Δ log(AP))
+hg     = hours(:);       % hours growth (first-differenced log hours), if already a growth rate
+
+% If your 'hours' is in levels, uncomment the next line to first-difference:
+% hg = [NaN; diff(hours(:))];
+
+% Align & drop first obs if needed
+keep = ~isnan(yg) & ~isnan(hg);
+yg = yg(keep); hg = hg(keep);
+
+Y = [yg hg];                     % columns: [Δprod, Δhours]
+[T, n] = size(Y);
+assert(n==2, 'Expecting two variables: Δprod and Δhours');
+
+% -------------------- Settings --------------------
+p  = 4;                          % quarterly VAR lags (Galí uses short lags in bivariate model)
+H  = 40;                         % horizons (quarters)
+K  = 1000;                       % bootstrap replications
+rng(20532,'twister');
 
 %%% Question (a)
 % Replication of Figure 2
