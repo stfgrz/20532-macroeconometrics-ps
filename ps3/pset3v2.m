@@ -572,7 +572,7 @@ function stats = run_ols(y, x, include_const)
             rethrow(ME);
         end
     end
-    
+   
     stats.b = XX_inv * (X'*y);
     stats.resid = y - X * stats.b;
     s2 = (stats.resid' * stats.resid) / (T - k);
