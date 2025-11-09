@@ -3,9 +3,7 @@
 % ---------------------------------------------------------------
 % Author: Stefano Graziosi
 % Date: 2025-11-01
-% Copilot Review: 2025-11-05
 % ---------------------------------------------------------------
-
 %% Housekeeping & Graphics Style
 clear; clc; close all; format compact;
 
@@ -31,12 +29,12 @@ rng(20532,'twister'); % Set seed for reproducibility
 
 %% Exercise 1: Monetary Shock VAR (Cholesky Identification)
 
-% --- Settings ---
+% Settings
 p = 4;      % VAR lag order
-H = 40;     % IRF / FEVD horizon
+H = 12;     % IRF / FEVD horizon
 K = 1000;   % Number of bootstrap replications
 
-% --- Data Loading ---
+% Data Loading
 file_ex1 = 'ps3/data/ps3_monetary_shock.csv';
 data_ex1 = readtable(file_ex1, 'PreserveVariableNames', true);
 
@@ -44,37 +42,61 @@ Y = [data_ex1.log_gdp, data_ex1.log_p, data_ex1.ffr];
 labels = ["log GDP", "log Price Level", "FFR"];
 [n_obs, n_vars] = size(Y);
 
-% --- Question (a): Estimate the VAR on original data ---
+%%% Question (a)
+% Estimate the VAR (suppose with a constant) on the $N$ variables in $y_t$ and store the coefficients (with the constants collected in the $(N\times1)$ vector $\hat c$ and the $(N\times N)$ autoregressive coefficients in the matrix $\hat A$). 
+% If there are $p$ lags, you can express the VAR($p$) as a VAR(1) with the companion form) and the $(T\times N)$ residuals $\hat\varepsilon$ (note that $T$ is the number of estimated residuals, those obtained once one eliminated the lags lost in the estimation).
+
 VAR_orig = estimateVAR(Y, p);
+
 P_orig = identifyCholesky(VAR_orig.SigmaU);
+
 IRF_orig = computeIRF(VAR_orig, P_orig, H);
+
 FEVD_orig = computeFEVD(IRF_orig);
 
-% --- Questions (b, c, d, e): Bootstrap confidence intervals ---
+%%% Question (b)
+% Sample with replacement from the estimated residuals so to form a new series of residuals $\tilde\varepsilon$ of dim $(T\times N)$. 
+% One way of doing it is generate $T$ random integers from $1$ to $T$ (for example, call the random draw of integers \texttt{PER}) and then set $\tilde\varepsilon = \hat\varepsilon[\texttt{PER},:]$; don’t use the command \texttt{permute}.
+
 fprintf('Bootstrapping IRFs for Exercise 1: K=%d, VAR(%d), H=%d\n', K, p, H);
 
 IRF_draws = zeros(n_vars, n_vars, H+1, K);
 FEVD_draws = zeros(n_vars, n_vars, H+1, K);
 
 Y_initial = Y(1:p, :); % Initial conditions for simulation
+U_centered = VAR_orig.U - mean(VAR_orig.U, 1);
+
+%%% Question (c)–(e)
+    %%% Question (c)
+        % Use the newly generated residuals and the estimated coefficients to construct new series:
+        %    \[
+        %        \tilde y_t \;=\; \hat c \;+\; \hat A\,\tilde y_{t-1} \;+\; \tilde\varepsilon_t.
+        %    \]
+        %    The starting values are the first values of $y_t$ (in the case of a VAR(1), just $y_1$).
+
+    %%% Question (d)
+        % Estimate a VAR on the new series $\tilde y_t$; identify shocks and compute im\-pulse responses and variance decompositions. Store the impulse responses and variance decompositions. 
+
+    %%% Question (e)
+        % Repeat steps b. to d. \(K\) times (e.g., \(K=1000\)).
 
 tic
 parfor k_boot = 1:K
     % (b) Resample residuals
-    U_boot = VAR_orig.U(randi(VAR_orig.n_eff, VAR_orig.n_eff, 1), :);
+    U_boot = U_centered(randi(VAR_orig.n_eff, VAR_orig.n_eff, 1), :);
     
     % (c) Simulate new data series
     Y_sim = simulateVAR(VAR_orig.B, Y_initial, U_boot);
 
     % (d) Re-estimate VAR on simulated data, identify, and compute IRFs/FEVDs
     VAR_boot = estimateVAR(Y_sim, p);
-    P_boot = identifyCholesky(VAR_boot.SigmaU);
-    IRF_draws(:,:,:,k_boot) = computeIRF(VAR_boot, P_boot, H);
+    P_boot   = identifyCholesky(VAR_boot.SigmaU);
+    IRF_draws(:,:,:,k_boot)  = computeIRF(VAR_boot, P_boot, H);
     FEVD_draws(:,:,:,k_boot) = computeFEVD(IRF_draws(:,:,:,k_boot));
 end
 toc
 
-% --- Question (f): Plot IRFs with confidence bands ---
+% Question (f): Plot IRFs with confidence bands
 IRF_bands = prctile(IRF_draws, [2.5, 50, 97.5], 4);
 
 for j_shock = 1:n_vars
@@ -115,12 +137,12 @@ end
 
 %% Exercise 2: Technology Shocks (Long-Run Identification)
 
-% --- Settings ---
+% Settings
 p_gali = 4;
-H_gali = 40;
+H_gali = 12;
 K_gali = 1000;
 
-% --- Data Prep (Galí 1999, Panel A) ---
+% Data Prep (Galí 1999, Panel A)
 file_ex2 = 'ps3/data/ps3_technology_shock.csv';
 data_ex2 = readtable(file_ex2, 'PreserveVariableNames', true);
 
@@ -132,21 +154,23 @@ Y_gali = [diff(prod_level), diff(hours_level)];
 labels_gali = ["Productivity", "Hours"];
 [~, n_vars_gali] = size(Y_gali);
 
-% --- Estimate VAR on original data and identify ---
+% Estimate VAR on original data and identify
 VAR_gali_orig = estimateVAR(Y_gali, p_gali);
 P_gali_orig = identifyLongRun(VAR_gali_orig);
 IRF_gali_orig = computeIRF(VAR_gali_orig, P_gali_orig, H_gali);
 
-% --- Bootstrap confidence intervals ---
+% Bootstrap confidence intervals
 fprintf('Bootstrapping IRFs for Exercise 2: K=%d, VAR(%d), H=%d\n', K_gali, p_gali, H_gali);
 
 IRF_gali_draws = zeros(n_vars_gali, n_vars_gali, H_gali+1, K_gali);
 Y_gali_initial = Y_gali(1:p_gali, :);
 
+U_centered_gali = VAR_gali_orig.U - mean(VAR_gali_orig.U,1);
+
 tic
 parfor k_boot = 1:K_gali
     % Resample residuals
-    U_boot = VAR_gali_orig.U(randi(VAR_gali_orig.n_eff, VAR_gali_orig.n_eff, 1), :);
+    U_boot = U_centered_gali(randi(VAR_gali_orig.n_eff, VAR_gali_orig.n_eff, 1), :);
     
     % Simulate new data series
     Y_sim = simulateVAR(VAR_gali_orig.B, Y_gali_initial, U_boot);
@@ -158,15 +182,15 @@ parfor k_boot = 1:K_gali
 end
 toc
 
-% --- Transform IRFs to cumulative levels ---
-% Function to convert growth rate IRFs to cumulative levels for plotting
+% Transform IRFs to cumulative levels
+    % Function to convert growth rate IRFs to cumulative levels for plotting
 cumulate_irfs = @(irf_draws) cumsum(irf_draws, 3);
 
-% Calculate cumulative IRFs for output (productivity + hours)
+    % Calculate cumulative IRFs for output (productivity + hours)
 irf_output_orig = IRF_gali_orig(1,:,:) + IRF_gali_orig(2,:,:);
 irf_output_draws = IRF_gali_draws(1,:,:,:) + IRF_gali_draws(2,:,:,:);
 
-% Combine all variables for plotting: [Prod, Hours, Output]
+    % Combine all variables for plotting: [Prod, Hours, Output]
 IRF_plot_orig = cumulate_irfs([IRF_gali_orig; irf_output_orig]);
 IRF_plot_draws = cumulate_irfs([IRF_gali_draws; irf_output_draws]);
 
@@ -174,7 +198,7 @@ labels_plot_gali = ["Productivity", "Hours", "Output"];
 plot_titles_gali = ["Technology Shock", "Non-Technology Shock"];
 n_plot_vars = length(labels_plot_gali);
 
-% --- Plotting (Figure 2 Style) ---
+% Plotting (Figure 2 Style)
 IRF_plot_bands = prctile(IRF_plot_draws, [2.5, 97.5], 4);
 fh = figure('Position',[50 50 980 760]);
 tlo = tiledlayout(n_plot_vars, n_vars_gali, 'Padding', 'compact', 'TileSpacing', 'compact');
@@ -206,7 +230,7 @@ close(fh);
 
 %% Helper Functions
 
-% --- VAR Estimation & Simulation ---
+% VAR Estimation & Simulation
 function Xlags = mlag(X, p)
     % Creates a matrix of p lags of X.
     [n_obs, n_vars] = size(X);
@@ -238,10 +262,21 @@ function model = estimateVAR(Y, p)
     model.SigmaU = (model.U' * model.U) / df; % Residual covariance matrix
     
     % Store coefficients in a structured way
-    model.c = model.B(1, :).'; % Intercepts (n_vars x 1)
-    model.A = reshape(model.B(2:end, :), n_vars, n_vars*p); % [A1, A2, ..., Ap]
-    model.A_comp = [model.A; eye(n_vars*(p-1)), zeros(n_vars*(p-1), n_vars)];
-    
+    model.c = model.B(1, :).'; % (n_vars x 1)
+
+    % Build A = [A1 A2 ... Ap] with correct orientation (column-vector dynamics)
+    A = zeros(n_vars, n_vars*p);
+    for k = 1:p
+        rows_k = (2 + (k-1)*n_vars) : (1 + k*n_vars); % rows in B for lag k
+        A_k = model.B(rows_k, :).';                    % transpose is crucial
+        A(:, (n_vars*(k-1)+1):(n_vars*k)) = A_k;
+    end
+    model.A = A;
+
+    % Companion matrix
+    model.A_comp = [A;
+                    eye(n_vars*(p-1)), zeros(n_vars*(p-1), n_vars)];
+
     % Store other useful info
     model.p = p;
     model.n_vars = n_vars;
@@ -270,7 +305,7 @@ function Y_sim = simulateVAR(B, Y_initial, U_boot)
     end
 end
 
-% --- Shock Identification ---
+% Shock Identification
 function P = identifyCholesky(SigmaU)
     % Computes the Cholesky factor of the residual covariance matrix.
     try
@@ -310,7 +345,7 @@ function P_BQ = identifyLongRun(VAR_model)
     P_BQ = C1 \ C1_P;
 end
 
-% --- Innovation Accounting ---
+% Innovation Accounting
 function IRF = computeIRF(VAR_model, P, H)
     % Computes structural impulse responses.
     % VAR_model: A struct from estimateVAR
