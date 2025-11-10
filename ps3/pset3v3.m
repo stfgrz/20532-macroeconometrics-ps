@@ -111,7 +111,7 @@ for j_shock = 1:n_vars
         irf_lo = squeeze(IRF_bands(i_var, j_shock, :, 1));
         irf_med = squeeze(IRF_bands(i_var, j_shock, :, 2));
         irf_hi = squeeze(IRF_bands(i_var, j_shock, :, 3));
-        
+       
         % Plot 95% confidence band
         fill([0:H, H:-1:0], [irf_lo', fliplr(irf_hi')], ...
             [0.85 0.9 1.0], 'EdgeColor', 'none', 'FaceAlpha', 0.8, 'DisplayName', '95% Band');
@@ -122,10 +122,10 @@ for j_shock = 1:n_vars
         
         yline(0, 'k:', 'HandleVisibility', 'off');
         ylabel(labels(i_var));
-        
+      
         if i_var == 1
             title(sprintf('Responses to a "%s" Shock (Cholesky)', labels(j_shock)));
-            legend('Location', 'best');
+            legend('Location','best','Interpreter','none');
         end
         if i_var == n_vars, xlabel('Horizon (Quarters)'); end
     end
@@ -214,10 +214,10 @@ for i_var = 1:n_plot_vars
         fill([0:H_gali, H_gali:-1:0], [irf_lo', fliplr(irf_hi')], ...
             [0.85 0.9 1.0], 'EdgeColor','none', 'FaceAlpha', 0.7);
         plot(0:H_gali, irf_point, 'k-', 'LineWidth', 1.6);
-        
+       
         yline(0, 'k--');
         title(sprintf('Response of %s', labels_plot_gali(i_var)));
-        ylabel('% Deviation');
+        ylabel('\% Deviation');
         if i_var == n_plot_vars, xlabel('Quarters'); end
         if i_var == 1, title(plot_titles_gali(j_shock)); end
     end
