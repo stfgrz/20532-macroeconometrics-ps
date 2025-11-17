@@ -30,7 +30,6 @@ rng(20532,'twister'); % Set seed for reproducibility
 %% Exercise 1: Monetary Shock VAR (Cholesky Identification)
 
 % Settings
-p = 4;      % VAR lag order
 H = 12;     % IRF / FEVD horizon
 K = 1000;   % Number of bootstrap replications
 
@@ -42,11 +41,49 @@ Y = [data_ex1.log_gdp, data_ex1.log_p, data_ex1.ffr];
 labels = ["log GDP", "log Price Level", "FFR"];
 [n_obs, n_vars] = size(Y);
 
+maxp = 8; 
+IC  = nan(maxp,3);   % [AIC, BIC, HQC]
+models = cell(maxp,1);
+
+for pp = 1:maxp
+    m = estimateVAR(Y, pp);
+    T = m.n_eff;                     % effective sample = n_obs - pp
+    k = m.n_vars^2 * pp + m.n_vars;  % total parameters (system-wide)
+
+    % ML covariance for information criteria
+    S = (m.U' * m.U) / T; 
+    S = (S + S')/2;                  % enforce symmetry
+
+    % robust log |S|
+    [R,pflag] = chol(S); 
+    if pflag ~= 0
+        % gentle jitter if needed
+        [V,D] = eig(S);
+        D = max(D, 1e-12*eye(size(D)));
+        S  = V*D*V';
+        R  = chol(S);
+    end
+    ll = 2*sum(log(diag(R)));        % = logdet(S)
+
+    % ICs per standard VAR formulas
+    IC(pp,1) = ll + (2*k)/T;           % AIC
+    IC(pp,2) = ll + (log(T)*k)/T;      % BIC (a.k.a. SBC)
+    IC(pp,3) = ll + (2*log(log(T))*k)/T; % HQC
+
+    models{pp} = m;
+end
+
+[~,pAIC] = min(IC(:,1));
+[~,pBIC] = min(IC(:,2));
+[~,pHQC] = min(IC(:,3));
+
+p = mode([pAIC, pBIC, pHQC]);   % or prefer pBIC for parsimony
+
 %%% Question (a)
 % Estimate the VAR (suppose with a constant) on the $N$ variables in $y_t$ and store the coefficients (with the constants collected in the $(N\times1)$ vector $\hat c$ and the $(N\times N)$ autoregressive coefficients in the matrix $\hat A$). 
 % If there are $p$ lags, you can express the VAR($p$) as a VAR(1) with the companion form) and the $(T\times N)$ residuals $\hat\varepsilon$ (note that $T$ is the number of estimated residuals, those obtained once one eliminated the lags lost in the estimation).
 
-VAR_orig = estimateVAR(Y, p);
+VAR_orig = models{p};
 
 P_orig = identifyCholesky(VAR_orig.SigmaU);
 
