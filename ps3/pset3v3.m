@@ -31,7 +31,7 @@ rng(20532,'twister'); % Set seed for reproducibility
 
 % Settings
 H = 12;     % IRF / FEVD horizon
-K = 1000;   % Number of bootstrap replications
+K = 5000;   % Number of bootstrap replications
 
 % Data Loading
 file_ex1 = 'ps3/data/ps3_monetary_shock.csv';
@@ -77,7 +77,11 @@ end
 [~,pBIC] = min(IC(:,2));
 [~,pHQC] = min(IC(:,3));
 
-p = mode([pAIC, pBIC, pHQC]);   % or prefer pBIC for parsimony
+fprintf('Selected lag orders:\n AIC: %d\n BIC: %d\n HQC: %d\n', pAIC, pBIC, pHQC);
+
+% We obtain p=2 from BIC, p=6 from AIC, p=4 from HQC. Keeping in mind that AIC is not consistent (it tends to overfit), we choose:
+
+p = pHQC;
 
 %%% Question (a)
 % Estimate the VAR (suppose with a constant) on the $N$ variables in $y_t$ and store the coefficients (with the constants collected in the $(N\times1)$ vector $\hat c$ and the $(N\times N)$ autoregressive coefficients in the matrix $\hat A$). 
@@ -112,7 +116,7 @@ U_centered = VAR_orig.U - mean(VAR_orig.U, 1);
         %    The starting values are the first values of $y_t$ (in the case of a VAR(1), just $y_1$).
 
     %%% Question (d)
-        % Estimate a VAR on the new series $\tilde y_t$; identify shocks and compute im\-pulse responses and variance decompositions. Store the impulse responses and variance decompositions. 
+        % Estimate a VAR on the new series $\tilde y_t$; identify shocks and compute impulse responses and variance decompositions. Store the impulse responses and variance decompositions. 
 
     %%% Question (e)
         % Repeat steps b. to d. \(K\) times (e.g., \(K=1000\)).
@@ -132,6 +136,37 @@ parfor k_boot = 1:K
     FEVD_draws(:,:,:,k_boot) = computeFEVD(IRF_draws(:,:,:,k_boot));
 end
 toc
+
+% Question (d): illustrating the FEVD we calculated above (maybe extra?)
+
+shock_names = labels;                 % same names for shocks and vars
+t = 0:H;
+
+% Normalize each bootstrap draw so shares sum to 1 at each (var, horizon)
+FEVD_sum   = sum(FEVD_draws, 2);                     % [n x 1 x H+1 x K]
+FEVD_norm  = bsxfun(@rdivide, FEVD_draws, FEVD_sum); % [n x n x H+1 x K]
+
+% Percentiles across draws (properly normalized)
+FEVD_pct   = prctile(FEVD_norm, [2.5, 50, 97.5], 4);
+FEVD_med   = squeeze(FEVD_pct(:,:,:,2));  % median shares [n x n x H+1]
+
+% Nice stacked area per variable
+for i_var = 1:n_vars
+    fh = figure('Position',[80 80 900 520]); hold on;
+    A = squeeze(FEVD_med(i_var,:,:))';  % [H+1 x n] for area()
+    area(t, A, 'LineStyle','none'); grid on;
+    ylim([0 1]); yticks(0:0.2:1); yticklabels(compose('%d%%',0:20:100));
+    xlim([0 H]);
+    xlabel('Horizon (Quarters)');
+    ylabel('Share of forecast error variance');
+    title(sprintf('FEVD of %s (median across %d bootstraps)', labels(i_var), size(FEVD_draws,4)));
+    legend(shock_names, 'Location','eastoutside');
+    set(gca,'Layer','top'); % grid above areas
+
+    % Export
+    fname = sprintf('ex1_fevd_stack_%s.pdf', strrep(lower(labels(i_var)),' ','_'));
+    exportFig(fh, fname); close(fh);
+end
 
 % Question (f): Plot IRFs with confidence bands
 IRF_bands = prctile(IRF_draws, [2.5, 50, 97.5], 4);
