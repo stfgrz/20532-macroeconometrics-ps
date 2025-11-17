@@ -1,0 +1,453 @@
+%Hey, if you're using this preamble it means that it was probably written by Stefano Graziosi (me). If you see something that doesn't make sense, feel free to email me at stefano.graziosi@studbocconi.it
+%p.s. in case it's not already evident from the preamble, I'm not a professional LaTeX user, so I'm sure there are better ways to do things. I'm just trying to make it work.
+
+% =============================================================================
+%  Preamble maintained by Stefano Graziosi
+%  If anything looks odd, ping: stefano.graziosi@studbocconi.it
+%  LAST UPDATE: 10-11-2025
+% =============================================================================
+
+% I don't own copyright on anything; credits to original authors.
+
+% =============================================================================
+%  CORE PACKAGES (general utilities, fonts/encoding, colors, math, layout)
+% =============================================================================
+
+% Headers/footers
+\usepackage{fancyhdr}
+
+% Encoding & fonts
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,mathrsfs}
+
+\usepackage[dvipsnames]{xcolor}                     % Colors (named colors like MidnightBlue, Cerulean, etc.)
+\usepackage[many]{tcolorbox}                        % Boxed environments
+\usepackage{graphicx}                               % Graphics
+\usepackage{bookmark}                               % (Optional, improves bookmark handling)
+\usepackage{titlesec}                               % Section titles formatting
+\usepackage{enumitem}                               % For fancy enumerates
+\usepackage{listings}                               % For the coding environment
+
+% Hyperlinks (kept in original order to preserve behavior)
+\usepackage{hyperref}
+\hypersetup{
+  pdftitle={\jobname},
+  pdfauthor={Stefano Graziosi},
+  colorlinks=true,
+  linkcolor=MidnightBlue,
+  citecolor=ForestGreen,
+  urlcolor=sgpurple
+}
+
+% Math
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools, amsfonts, bm}
+\usepackage{thmtools}
+
+% Line spacing & multicolumn text
+\usepackage{setspace,multicol}
+
+% Title image & PDF inclusion
+\usepackage{titlepic}
+\usepackage{pdfpages}
+
+% Fun/extras
+\usepackage{halloweenmath}
+\usepackage{kantlipsum}
+
+% =============================================================================
+%  TABLES
+% =============================================================================
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{siunitx}
+\sisetup{
+    round-mode=places,
+    round-precision=3,
+    table-number-alignment=center
+}
+
+\usepackage[nameinlink,noabbrev]{cleveref}
+
+% =============================================================================
+%  FIGURES & SUBFIGURES
+% =============================================================================
+% (graphicx loaded above intentionally to keep original load order)
+\usepackage{wrapfig}
+\usepackage{float}
+\usepackage{caption}
+\captionsetup{font=small, labelfont=bf, labelsep=period}
+\usepackage{subcaption}
+
+% =============================================================================
+%  DIAGRAMS AND PLOTS
+% =============================================================================
+
+\usepackage[all]{xy}
+\usepackage{tikz}
+\usetikzlibrary{calc,arrows.meta,positioning}
+% (Optional speed-up for heavy docs; requires -shell-escape)
+% \usetikzlibrary{external}
+% \tikzexternalize[prefix=tikzcache/]
+
+% =============================================================================
+%  Equations
+% =============================================================================
+
+\numberwithin{equation}{section} % or \counterwithin{equation}{section}
+
+% =============================================================================
+%  PAGE GEOMETRY
+% =============================================================================
+\usepackage[a4paper,margin=1in]{geometry}
+% \usepackage[margin=1in]{geometry} % (alt)
+
+% =============================================================================
+%  BIBLIOGRAPHY
+% =============================================================================
+\usepackage[backend=biber,
+            style=numeric,          % options: numeric, verbose, authoryear, authorname
+            sorting=nyt]{biblatex}
+\addbibresource{refs.bib}
+\usepackage{csquotes}               % smarter quotes & works great with biblatex
+
+% =============================================================================
+%  CHAPTER/SECTION FORMATTING & NUMBERING
+% =============================================================================
+
+% Keep pure number for counters/refnames
+\renewcommand\thesection{\arabic{section}}
+
+% Pretty-print the section heading label
+\titleformat{\section}{\normalfont\Large\bfseries}{Question \thesection:}{0.5em}{}
+
+% Figure/Table numbering by section
+\usepackage{chngcntr}
+\counterwithin{figure}{section}
+\counterwithin{table}{section}
+\renewcommand{\thefigure}{\thesection-\arabic{figure}}
+\renewcommand{\thetable}{\thesection-\arabic{table}}
+
+% =============================================================================
+%  COLORS (custom palette)
+% =============================================================================
+
+\definecolor{sgblue}{RGB}{0,169,211}
+\definecolor{sggreen}{RGB}{0,164,0}
+\definecolor{sgpurple}{RGB}{99,0,165}
+\definecolor{sgyellow}{RGB}{255,211,0}
+\definecolor{sgorange}{RGB}{255,127,20}
+\definecolor{sbblue}{RGB}{219,248,254}
+\definecolor{sbgreen}{RGB}{223,255,218}
+\definecolor{sbpurple}{RGB}{241,220,255}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+% =============================================================================
+%  GENERIC BOX ENVIRONMENT
+% =============================================================================
+
+% Standard LaTeX box with color accents
+\newtcolorbox{mybox}[3][]{
+  colframe = #2!25,
+  colback  = #2!10,
+  coltitle = #2!20!black,
+  title    = {#3},
+  #1,
+}
+
+% =============================================================================
+%  BASIC PROBLEM/SOLUTION ENVIRONMENTS
+% =============================================================================
+
+% "Problem" environment
+\newtheorem{problem}{Problem}
+
+% Personalized "Solution" environment
+\newenvironment{solution}[1][\it{\textcolor{MidnightBlue}{Solution}}]{\textbf{#1. } }{\textcolor{MidnightBlue}{$\square$}}
+
+% =============================================================================
+%  THEOREM STYLES & BOXED PRESENTATION
+% =============================================================================
+
+% A helper length to fine-tune the label alignment.
+% We measure the width of a single normal-space character, store it in \spacelength,
+% and later shift the heading by exactly that width (negative hskip) to line things up.
+\newlength{\spacelength}
+\settowidth{\spacelength}{\normalfont\ }
+
+% ----------------------------- STYLE: "theorem" ------------------------------
+% This defines a thmtools STYLE named "theorem".
+% Later, any environment declared as \declaretheorem[style=theorem]{<env>}
+% will use the fonts/formatting set below for its HEAD LINE (the bold label area).
+\declaretheoremstyle[
+  headfont={\bfseries\sffamily\footnotesize},  % font for the heading (e.g., "Theorem 2")
+  notefont={\normalfont},                      % font for the optional note (the [...] part)
+  bodyfont={\normalfont},                      % font for the body text inside the environment
+  headpunct={\relax},                          % punctuation after the heading; \relax = none
+  % headformat controls how the label is typeset.
+  % \NAME   -> the environment name ("Theorem", "Proposition", etc.)
+  % \NUMBER -> the auto number (e.g., "2.3")
+  % \NOTE   -> the optional note, provided by \begin{theorem}[<NOTE>]
+  % \marginparsep is the standard gap used for margin notes; you reuse it as a spacing constant.
+  % \makebox[0pt][r]{...} puts the label in a zero-width box, right-aligned,
+  % and then \hskip-\spacelength nudges the following text left by one space width
+  % so that the body aligns nicely under the heading.
+  headformat={\makebox[0pt][r]{\NAME\ \NUMBER\hspace{\marginparsep}}\hskip-\spacelength{\normalsize\NOTE}},
+]{theorem}
+
+% ----------------- tcolorbox skin for any env using name "theorem" -----------
+% This does NOT create an environment; it says: "whenever the 'theorem'
+% environment is used, wrap its contents with this box styling."
+\tcolorboxenvironment{theorem}{
+  boxrule=0pt,                                % no outer rectangular frame
+  boxsep=0pt,                                 % no internal padding around the content (we set our own left/right)
+  colback={White},                            % white background
+  enhanced jigsaw,                            % enables advanced tcolorbox features
+  borderline west={1pt}{0pt}{ForestGreen},    % a 1pt vertical colored bar on the LEFT
+  sharp corners,                              % squared corners (not rounded)
+  before skip=10pt,                           % vertical space before the box
+  after skip=10pt,                            % vertical space after the box
+  left=5pt, right=5pt,                        % inner left/right padding (content inset)
+  breakable,                                  % allow the box to split across pages
+}
+
+% --------------------------- PROPOSITION setup -------------------------------
+% Create "proposition" as a thmtools theorem that USES the "theorem" STYLE above.
+\declaretheorem[style=theorem]{proposition}
+
+% And give "proposition" its own box skin (purple left border). Same mechanics as "theorem".
+\tcolorboxenvironment{proposition}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw,
+  borderline west={1pt}{0pt}{Mulberry},
+  sharp corners,
+  before skip=10pt,
+  after skip=10pt,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% ---------------------------- THEOREM setup ----------------------------------
+% Explicitly declare the "theorem" environment (thmtools way) using the "theorem" style.
+% Note: the box style for "theorem" is already defined above via \tcolorboxenvironment{theorem}{...}.
+\declaretheorem[style=theorem]{theorem}
+
+% ----------------------------- STYLE: "proof" --------------------------------
+% amsthm already defines a proof environment, so we first neutralize it:
+\let\proof\relax
+\let\endproof\relax
+
+% Now we declare a thmtools STYLE named "proof" for the heading of the proof environment.
+\declaretheoremstyle[
+  headfont={\small\scshape},                  % small caps for "Proof"
+  notefont={\normalfont},
+  bodyfont={\normalfont},
+  headpunct={\relax},
+  headformat={\makebox[0pt][r]{\NAME\hspace{\marginparsep}}\hskip-\spacelength{\NOTE}},
+]{proof}
+
+% And we hook the "proof" environment to a tcolorbox with a thin black left rule.
+\tcolorboxenvironment{proof}{
+  boxrule=0pt,
+  boxsep=0pt,
+  blanker,                                    % removes the typical tcolorbox background to look like plain text
+  borderline west={1pt}{0pt}{black},          % thin black bar on the left
+  before skip=10pt,
+  after skip=10pt,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% Now we REDECLARE the actual "proof" environment using the "proof" STYLE.
+% The 'qed=\qedsymbol' option ensures the end-of-proof □ is inserted automatically at the end.
+\declaretheorem[style=proof, qed=\qedsymbol]{proof}
+
+% ------------------------------ STYLE: "claim" -------------------------------
+% A lighter-looking style used for "Intuition" and similar notes (italic header).
+\declaretheoremstyle[
+  headfont={\footnotesize\itshape},
+  notefont={\normalfont},
+  bodyfont={\normalfont},
+  headpunct={\relax},
+  headformat={\makebox[0pt][r]{\NAME\hspace{\marginparsep}}\hskip-\spacelength{\NOTE}},
+]{claim}
+
+% Create an "Intuition" environment that uses the 'claim' style (no special box here).
+\declaretheorem[style=claim]{Intuition}
+
+% -------------------- Environments declared the amsthm way -------------------
+% Below you switch to amsthm’s API: \theoremstyle{<name>} then \newtheorem{...}.
+% NOTE: \theoremstyle selects an amsthm style (e.g., plain/definition/remar k),
+% not a thmtools style. You happen to use the same style NAME "theorem",
+% but that name is defined via thmtools above—not via amsthm’s \newtheoremstyle.
+% In many setups, \theoremstyle{theorem} has no effect unless you also defined an
+% amsthm style called "theorem". Your boxes still appear because
+% \tcolorboxenvironment{<envname>}{...} wraps by ENVIRONMENT NAME.
+
+\theoremstyle{theorem}             % (May be a no-op unless an amsthm style "theorem" exists.)
+\newtheorem{ques}{Question}        % Unboxed label styling depends on current amsthm style.
+
+% Definition with its own box skin (Cerulean left rule). The header font/styling here
+% comes from the current amsthm \theoremstyle (see the note above).
+\theoremstyle{theorem}
+\newtheorem{definition}{Definition}
+\tcolorboxenvironment{definition}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw,
+  borderline west={1pt}{0pt}{Cerulean},
+  sharp corners,
+  before skip=10pt,
+  after skip=10pt,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% Lemma with a Rhodamine bar
+\theoremstyle{theorem}
+\newtheorem{lemma}{Lemma}
+\tcolorboxenvironment{lemma}{
+  boxrule=0pt,
+  boxsep=0pt,
+  blanker,
+  borderline west={1pt}{0pt}{Rhodamine},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% Remark with a BurntOrange bar
+\theoremstyle{theorem}
+\newtheorem{remark}{Remark}
+\tcolorboxenvironment{remark}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw,
+  borderline west={1pt}{0pt}{BurntOrange},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% Hint with a BurntOrange bar
+\theoremstyle{theorem}
+\newtheorem{hint}{Hint}
+\tcolorboxenvironment{hint}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw,
+  borderline west={1pt}{0pt}{BurntOrange},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% Warning with a BurntOrange bar
+\theoremstyle{theorem}
+\newtheorem{warning}{Warning}
+\tcolorboxenvironment{warning}{
+  boxrule=0pt,
+  boxsep=0pt,
+  colback={White},
+  enhanced jigsaw,
+  borderline west={1pt}{0pt}{BrickRed},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% Corollary with a WildStrawberry bar
+\theoremstyle{theorem}
+\newtheorem{corollary}{Corollary}
+\tcolorboxenvironment{corollary}{
+  boxrule=0pt,
+  boxsep=0pt,
+  enhanced jigsaw,
+  borderline west={1pt}{0pt}{WildStrawberry},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% Example with a Dandelion bar
+\theoremstyle{theorem}
+\newtheorem{example}{Example}
+\tcolorboxenvironment{example}{
+  boxrule=0pt,
+  boxsep=0pt,
+  blanker,
+  borderline west={1pt}{0pt}{Dandelion},
+  before skip=10pt,
+  after skip=10pt,
+  sharp corners,
+  left=5pt,
+  right=5pt,
+  breakable,
+}
+
+% Additional helpers using the 'claim' style (amsthm path).
+% Again, \theoremstyle{claim} here refers to an amsthm style named "claim".
+% You defined a thmtools style named "claim" above, which doesn't automatically
+% register with amsthm. If no amsthm style "claim" exists, this line may be a no-op.
+\theoremstyle{claim}
+\newtheorem{intu}{Intuition}
+
+\theoremstyle{claim}
+\newtheorem{solu}{Solution}
+
+% =============================================================================
+%  CODE, ALGORITHM & PSEUDOCODE LISTINGS
+% =============================================================================
+
+\lstdefinestyle{mystyle}{
+  backgroundcolor=\color{backcolour},
+  commentstyle=\color{codegreen},
+  keywordstyle=\color{magenta},
+  numberstyle=\tiny\color{codegray},
+  stringstyle=\color{codepurple},
+  basicstyle=\ttfamily\footnotesize,
+  breakatwhitespace=false,
+  breaklines=true,
+  captionpos=b,
+  keepspaces=true,
+  numbers=left,
+  numbersep=5pt,
+  showspaces=false,
+  showstringspaces=false,
+  showtabs=false,
+  tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\usepackage{algorithm}
+\usepackage{algpseudocode}
